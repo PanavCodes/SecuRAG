@@ -130,34 +130,51 @@ Evaluated across **65 curated benchmark questions** spanning 4 tiers (Single-hop
 
 ---
 
-## Quickstart & Launching
+## Quickstart & Launching (Fresh PC Setup)
 
-### Option A: One-Click Launcher (Windows)
-Double-click [`run.bat`](run.bat) or run from PowerShell / CMD:
-```cmd
-run.bat
-```
-This interactive launcher offers:
-- `[1] Launch Full Stack (FastAPI Backend + Streamlit UI Dashboard)` *(Recommended)*
-- `[2] Launch Streamlit UI Dashboard Only`
-- `[3] Launch FastAPI Service (Swagger UI)`
-- `[4] Run System Infrastructure Healthcheck`
-- `[5] Run Full Ingestion & Graph Loader`
-- `[6] Run Acceptance Test Suite (pytest)`
+Setting up SecuRAG on any new PC is completely automated through two batch scripts:
 
----
-
-### Option B: Automated Setup & Manual Run
-
-#### 1. Setup Environment
-Run the automated bootstrap script:
+### 1. Automated Setup (`setup.bat`)
+Run the bootstrap script from CMD or PowerShell:
 ```cmd
 setup.bat
 ```
-*(Or on Linux/macOS: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && pip install -e .`)*
+This automated 8-step script:
+1. **Verifies Python**: Detects Python 3.12 or 3.11.
+2. **Creates Virtual Environment**: Initializes `.venv` automatically.
+3. **Installs PyTorch**: Detects your GPU via `nvidia-smi` and installs CUDA 12.4 PyTorch (or CPU build).
+4. **Installs Dependencies**: Installs pinned dependencies from `requirements.txt` and packages `securag` in editable mode.
+5. **Pre-Downloads ML Models**: Pre-fetches and warms both `BAAI/bge-m3` (Embedder) and `BAAI/bge-reranker-v2-m3` (Cross-Encoder) into your local Hugging Face cache via [`scripts/download_models.py`](scripts/download_models.py).
+6. **Downloads Security Datasets**: Sparse clones public vulnerability datasets (`cvelistV5`, `kev-data`, `attack-stix-data`, `cti`, `cwe`) into `data/raw/` via [`scripts/clone_data.ps1`](scripts/clone_data.ps1).
+7. **Configures `.env`**: Creates `.env` from template if missing.
 
-#### 2. Configure Environment (`.env`)
-Copy the template and fill in your API credentials:
+*(On Linux / macOS, run: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && pip install -e . && python scripts/download_models.py`)*
+
+---
+
+### 2. One-Click Launcher (`run.bat`)
+Double-click [`run.bat`](run.bat) or run from console:
+```cmd
+run.bat
+```
+This interactive console provides instant menu options:
+- **`[1] Launch Full Stack`** *(Recommended)*: Starts Neo4j Docker container, launches FastAPI backend in background, and opens the Streamlit UI dashboard in your browser.
+- **`[2] Launch Streamlit UI Dashboard Only`**: Launches the cyber triage UI in direct-engine mode.
+- **`[3] Launch FastAPI Service`**: Runs Uvicorn server with Swagger docs at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+- **`[4] Run System Healthcheck`**: Tests Neo4j APOC, Pinecone index, CUDA models, and LLM API.
+- **`[5] Run Full Ingestion & Graph Loader`**: Executes the complete pipeline (Parsers $\to$ Neo4j $\to$ SQLite Docstore $\to$ BM25 $\to$ Pinecone).
+- **`[6] Pre-download & Cache ML Models`**: Re-downloads or validates Hugging Face models.
+- **`[7] Download Raw Security Datasets`**: Pulls latest CVE, KEV, ATT&CK, CAPEC, and CWE data.
+- **`[8] Run Acceptance Test Suite`**: Executes `pytest tests/ -v`.
+
+---
+
+### Manual Setup & Execution (Step-by-Step)
+
+If you prefer manual CLI commands:
+
+#### Step 1: Configure Credentials (`.env`)
+Copy the template and insert your API keys:
 ```cmd
 copy .env.example .env
 ```

@@ -6,10 +6,10 @@ title SecuRAG Launcher
 cls
 echo ======================================================================
 echo    ____                  ____        _    ____ 
-echo   / ___|  ___  ___ _   _^|  _ \      / \  / ___^|
-echo   \___ \ / _ \/ __^| ^| ^| ^| ^|_) ^|____/ _ \^| ^|  _ 
-echo    ___) ^|  __/ (__^| ^|_^| ^|  _ ^<_____/ ___ \ ^|_^| ^|
-echo   ^|____/ \___^|\___^|\__,_^|_^| \_\   /_/   \_\____^|
+echo   / ___|  ___  ___ _   _|  _ \      / \  / ___|
+echo   \___ \ / _ \/ __| | | | |_) |____/ _ \| |  _ 
+echo    ___) |  __/ (__| |_| |  _ <_____/ ___ \ |_| |
+echo   |____/ \___|\___|\__,_|_| \_\   /_/   \_\____|
 echo.
 echo   Agentic Hybrid GraphRAG for CVE / Threat-Intel Triage
 echo ======================================================================
@@ -35,10 +35,12 @@ echo   [2] Launch Streamlit UI Dashboard Only
 echo   [3] Launch FastAPI Service (Swagger docs at http://127.0.0.1:8000/docs)
 echo   [4] Run System Infrastructure Healthcheck
 echo   [5] Run Full Ingestion & Graph Loader (Parsers -^> Neo4j -^> Pinecone)
-echo   [6] Run Acceptance Test Suite (pytest)
+echo   [6] Pre-download & Cache ML Models (BAAI/bge-m3 & BAAI/bge-reranker-v2-m3)
+echo   [7] Download Raw Security Datasets (CISA KEV, CVEs, CWE, CAPEC, ATT&CK)
+echo   [8] Run Acceptance Test Suite (pytest)
 echo   [0] Exit
 echo.
-set /p CHOICE="Enter choice [0-6] (default=1): "
+set /p CHOICE="Enter choice [0-8] (default=1): "
 if "%CHOICE%"=="" set CHOICE=1
 
 if "%CHOICE%"=="1" goto :launch_full
@@ -46,7 +48,9 @@ if "%CHOICE%"=="2" goto :launch_ui
 if "%CHOICE%"=="3" goto :launch_api
 if "%CHOICE%"=="4" goto :healthcheck
 if "%CHOICE%"=="5" goto :run_ingest
-if "%CHOICE%"=="6" goto :run_tests
+if "%CHOICE%"=="6" goto :download_models
+if "%CHOICE%"=="7" goto :download_data
+if "%CHOICE%"=="8" goto :run_tests
 if "%CHOICE%"=="0" goto :exit
 
 echo [!] Invalid choice.
@@ -98,27 +102,46 @@ goto :menu
 :run_ingest
 echo.
 echo ======================================================================
-echo   Running Ingestion & Graph Ingestion Pipeline
+echo   Running Full Ingestion & Graph Ingestion Pipeline
 echo ======================================================================
 echo.
 call .venv\Scripts\activate.bat
-echo [1/4] Parsing raw datasets to JSONL...
+echo [1/5] Parsing raw datasets to JSONL...
 python -m securag.ingest.parsers.cve
 python -m securag.ingest.parsers.kev
 python -m securag.ingest.parsers.cwe
 python -m securag.ingest.parsers.capec
 python -m securag.ingest.parsers.attack
 echo.
-echo [2/4] Loading graph topology into Neo4j...
+echo [2/5] Loading graph topology into Neo4j...
 python -m securag.graph.load
 echo.
-echo [3/4] Creating chunk SQLite docstore and Neo4j chunk nodes...
+echo [3/5] Creating chunk SQLite docstore and Neo4j chunk nodes...
 python -m securag.ingest.chunk
 echo.
-echo [4/4] Building BM25 sparse indices...
+echo [4/5] Building BM25 sparse indices...
 python -m securag.retrieval.bm25
 echo.
-echo [OK] Ingestion complete.
+echo [5/5] Embedding & Indexing into Pinecone...
+python -m securag.ingest.embed_index
+echo.
+echo [OK] Full ingestion pipeline complete.
+pause
+goto :menu
+
+:download_models
+echo.
+echo [*] Pre-downloading and validating ML models...
+call .venv\Scripts\activate.bat && python scripts\download_models.py
+echo.
+pause
+goto :menu
+
+:download_data
+echo.
+echo [*] Downloading public security datasets to data\raw...
+powershell -ExecutionPolicy Bypass -File scripts\clone_data.ps1 -Years 2024,2025
+echo.
 pause
 goto :menu
 

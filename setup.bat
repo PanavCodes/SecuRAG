@@ -1,14 +1,20 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo ============================================================
+echo ======================================================================
+echo    ____                  ____        _    ____ 
+echo   / ___|  ___  ___ _   _|  _ \      / \  / ___|
+echo   \___ \ / _ \/ __| | | | |_) |____/ _ \| |  _ 
+echo    ___) |  __/ (__| |_| |  _ <_____/ ___ \ |_| |
+echo   |____/ \___|\___|\__,_|_| \_\   /_/   \_\____|
+echo.
 echo   SecuRAG - Automated Environment Setup
 echo   Agentic Hybrid GraphRAG for CVE / Threat-Intel Triage
-echo ============================================================
+echo ======================================================================
 echo.
 
 :: 1. Detect Python
-echo [1/6] Checking Python installation...
+echo [1/8] Checking Python installation...
 set "PYTHON_CMD="
 
 :: Try py -3.12, py -3.11, python
@@ -41,7 +47,7 @@ for /f "tokens=*" %%i in ('%PYTHON_CMD% --version') do echo   %%i
 echo.
 
 :: 2. Setup Virtual Environment
-echo [2/6] Setting up virtual environment in .venv...
+echo [2/8] Setting up virtual environment in .venv...
 if not exist ".venv" (
     echo Creating .venv directory...
     %PYTHON_CMD% -m venv .venv
@@ -57,7 +63,7 @@ if not exist ".venv" (
 echo.
 
 :: 3. Activate venv
-echo [3/6] Activating virtual environment...
+echo [3/8] Activating virtual environment...
 if not exist ".venv\Scripts\activate.bat" (
     echo [ERROR] .venv\Scripts\activate.bat missing!
     pause
@@ -68,13 +74,13 @@ echo [OK] Activated .venv
 echo.
 
 :: 4. Upgrade pip
-echo [4/6] Upgrading pip...
+echo [4/8] Upgrading pip...
 python -m pip install --upgrade pip --quiet
 echo [OK] Pip upgraded.
 echo.
 
 :: 5. Install Dependencies
-echo [5/6] Installing PyTorch and dependencies...
+echo [5/8] Installing PyTorch and project dependencies...
 
 :: Check for NVIDIA GPU
 nvidia-smi >nul 2>&1
@@ -89,7 +95,7 @@ if %ERRORLEVEL% equ 0 (
 echo Installing requirements from requirements.txt...
 pip install -r requirements.txt
 if %ERRORLEVEL% neq 0 (
-    echo [WARNING] requirements.txt installation had warnings. Trying requirements-loose.txt if available...
+    echo [WARNING] requirements.txt installation had warnings. Trying requirements-loose.txt...
     if exist "requirements-loose.txt" (
         pip install -r requirements-loose.txt
     )
@@ -100,34 +106,49 @@ pip install -e . --no-deps
 echo [OK] Dependencies installed successfully.
 echo.
 
-:: 6. Environment configuration (.env)
-echo [6/6] Checking configuration (.env)...
+:: 6. Pre-download and Warm ML Models
+echo [6/8] Pre-downloading Hugging Face ML models...
+echo   1. Dense Embedder: BAAI/bge-m3 (1024-dim)
+echo   2. Cross-Encoder:  BAAI/bge-reranker-v2-m3
+python scripts\download_models.py
+if %ERRORLEVEL% neq 0 (
+    echo [WARNING] Model download encountered an issue. Models will download on first query if needed.
+)
+echo.
+
+:: 7. Raw Security Datasets Check
+echo [7/8] Checking security datasets (data\raw)...
+if not exist "data\raw\cvelistV5" (
+    echo [!] Raw datasets not detected in data\raw.
+    echo Downloading public vulnerability datasets (CISA KEV, CVEs 2024-2025, CWE, CAPEC, ATT&CK)...
+    powershell -ExecutionPolicy Bypass -File scripts\clone_data.ps1 -Years 2024,2025
+) else (
+    echo [OK] Security datasets found in data\raw.
+)
+echo.
+
+:: 8. Environment Configuration (.env)
+echo [8/8] Checking configuration (.env)...
 if not exist ".env" (
     if exist ".env.example" (
         echo Creating .env from .env.example...
         copy .env.example .env >nul
-        echo [IMPORTANT] Created .env file. Please edit .env and configure your LLM, Neo4j, and Pinecone API keys!
+        echo [IMPORTANT] Created .env file. Please edit .env with your LLM, Neo4j, and Pinecone credentials!
     )
 ) else (
     echo [OK] Existing .env file found.
 )
 echo.
 
-echo ============================================================
+echo ======================================================================
 echo   SecuRAG Setup Complete!
-echo ============================================================
+echo ======================================================================
 echo.
 echo Next steps:
-echo   1. Start Neo4j:
+echo   1. Start Neo4j APOC:
 echo      docker compose up -d
 echo.
-echo   2. Run system healthcheck:
-echo      python scripts\healthcheck.py
-echo.
-echo   3. Launch FastAPI backend:
-echo      python -m uvicorn securag.api.main:app --reload
-echo.
-echo   4. Launch Streamlit UI:
-echo      streamlit run src\securag\ui\app.py
+echo   2. Launch the interactive menu:
+echo      run.bat
 echo.
 pause
