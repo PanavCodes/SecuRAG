@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 data/raw/
 data/neo4j/
+data/processed/*.jsonl
 data/processed/*.pkl
 data/processed/*.sqlite
 third_party/
