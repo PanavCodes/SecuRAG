@@ -1,12 +1,68 @@
+# Environment & Secrets (NEVER COMMIT SECRETS)
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+*secret*
+service_account*.json
+
+# Virtual Environments
 .venv/
+venv/
+env/
+ENV/
+
+# Python & Bytecode Artifacts
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Quality Assurance
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Data & Knowledge Graph storage
 data/raw/
 data/neo4j/
 data/processed/*.jsonl
 data/processed/*.pkl
 data/processed/*.sqlite
+data/processed/*.db
+data/eval/*.tmp
+
+# Reference Repos & Logs
 third_party/
+scratch/
 results/*.tmp
-.pytest_cache/
+*.log
+
+# IDE, System & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
