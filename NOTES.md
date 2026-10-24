@@ -262,3 +262,29 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - `test_run_ablation_and_verify_outputs`: Passed (7 configs verified, all markdown tables and failure logs validated).
   - Acceptance run: `pytest tests/test_ablation.py -v -s` **2 passed in 1367.04s (22m 47s)**.
 
+### Step 14: API and UI Deployment
+- **FastAPI Service** (`src/securag/api/main.py`):
+  - Created endpoints:
+    - `POST /ask`: Request `{question, config_overrides?}` -> Response `{answer, citations, route, rounds, latency_ms, trace_url, graph_paths, context}`.
+    - `GET /health`: Returns `{status: "healthy", neo4j: true, version: "1.0.0"}`.
+    - `GET /config`: Returns active pipeline feature flags.
+  - Enabled CORS middleware for browser and remote frontend access.
+- **Streamlit Interactive Dashboard** (`src/securag/ui/app.py`):
+  - Designed cyber-security interface with custom CSS (dark obsidian palette, glassmorphism cards, status badges).
+  - Features:
+    - Pre-canned benchmark questions for Simple, Multi-hop, and Out-of-Domain routes.
+    - Real-time route badge (`⚡ Simple`, `🌐 Multi-Hop`, `🛡️ Out-of-Domain`), latency counter, rewrite rounds, and verified citation counter.
+    - Expandable knowledge graph traversal paths formatted as clean directed node-edge chains (`(CVE) ──[HAS_WEAKNESS]──▶ (CWE) ──[RELATED_ATTACK_PATTERN]──▶ (CAPEC)`).
+    - Expandable retrieved & refined source text chunks with relevance scores.
+    - Sidebar toggles for all 9 pipeline components (BM25, Cross-Encoder, Graph Retrieval, GraphER, CRAG loop, Router, Reflection, Query Expansion, HyDE).
+    - Dual backend mode: Seamless execution via FastAPI HTTP or standalone in-process direct engine.
+- **Acceptance Verification** (`tests/test_api_ui.py`):
+  - Live `curl.exe` to `http://127.0.0.1:8000/ask` returned 200 OK with valid JSON schema in 116.87 ms.
+  - `test_health_and_config_endpoints`: Passed.
+  - `test_ask_simple_route`: Passed (`route="simple"`).
+  - `test_ask_out_of_kb_route`: Passed (`route="out_of_kb"` with instant fallback message).
+  - `test_ask_multi_hop_route`: Passed (`route="multi_hop"`, verified graph paths and `T1021`/`TA0008` citations).
+  - `test_streamlit_app_syntax_and_components`: Passed.
+  - Acceptance run: `pytest tests/test_api_ui.py -v -s` **5 passed in 85.30s**.
+
+
