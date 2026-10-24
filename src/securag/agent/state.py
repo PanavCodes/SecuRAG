@@ -21,3 +21,4 @@ class AgentState(TypedDict):
     reflection: dict[str, Any] | None  # {faithful: bool, unsupported_claims: [...]}
     config: dict[str, Any]  # active feature flags
     metrics: dict[str, Any]  # per-node latency, tokens
+    termination_reason: str | None  # 'success', 'max_rounds', 'novelty_guard', 'out_of_kb'

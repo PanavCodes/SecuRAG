@@ -282,6 +282,7 @@ def refine_context_node(state: AgentState) -> dict[str, Any]:
 
     return {
         "context": context,
+        "termination_reason": "success",
         "metrics": {**state.get("metrics", {}), "refine_latency": time.time() - start_time},
     }
 
@@ -327,11 +328,21 @@ Respond with ONLY the new query string without quotes or preamble."""
             is_novel = False
             break
 
-    if not is_novel or current_round >= settings.max_rewrite_rounds:
-        # Route to fallback
+    if not is_novel:
+        logger.info("CRAG loop terminating: novelty guard triggered (similarity %.3f >= threshold %.3f)", sim, settings.novelty_cosine_threshold)
         return {
             "rewrite_round": current_round,
             "verdict": "incorrect",
+            "termination_reason": "novelty_guard",
+            "metrics": {**state.get("metrics", {}), "rewrite_latency": time.time() - start_time},
+        }
+
+    if current_round >= settings.max_rewrite_rounds:
+        logger.info("CRAG loop terminating: max rewrite rounds reached (%d)", settings.max_rewrite_rounds)
+        return {
+            "rewrite_round": current_round,
+            "verdict": "incorrect",
+            "termination_reason": "max_rounds",
             "metrics": {**state.get("metrics", {}), "rewrite_latency": time.time() - start_time},
         }
 
@@ -350,6 +361,7 @@ Respond with ONLY the new query string without quotes or preamble."""
 def web_fallback_node(state: AgentState) -> dict[str, Any]:
     """Fallback node for out-of-KB queries or unanswerable requests."""
     start_time = time.time()
+    reason = state.get("termination_reason") or ("out_of_kb" if state.get("route") == "out_of_kb" else "fallback")
     return {
         "context": [{
             "chunk_id": "fallback:out_of_kb",
@@ -359,6 +371,7 @@ def web_fallback_node(state: AgentState) -> dict[str, Any]:
         }],
         "answer": "The requested information was not found in the SecuRAG cybersecurity knowledge base.",
         "citations": [],
+        "termination_reason": reason,
         "metrics": {**state.get("metrics", {}), "fallback_latency": time.time() - start_time},
     }
 

@@ -46,10 +46,20 @@ def grade_decision(state: AgentState) -> Literal["refine_context", "rewrite_quer
         return "refine_context"
 
     # Verdict is incorrect: check if CRAG loop is enabled and rounds remain
+    if state.get("termination_reason") in ["novelty_guard", "max_rounds"]:
+        return "web_fallback"
+
     if use_crag and rounds < max_rounds:
         return "rewrite_query"
 
     return "web_fallback"
+
+
+def rewrite_decision(state: AgentState) -> Literal["retrieve_hybrid", "web_fallback"]:
+    """Conditional edge after rewrite_query: routes to fallback if novelty guard or max rounds triggered."""
+    if state.get("termination_reason") in ["novelty_guard", "max_rounds"]:
+        return "web_fallback"
+    return "retrieve_hybrid"
 
 
 def build_agent_graph(checkpointer: Any = None) -> Any:
@@ -96,8 +106,15 @@ def build_agent_graph(checkpointer: Any = None) -> Any:
         },
     )
 
-    # Rewrite loop loops back to retrieve_hybrid
-    builder.add_edge("rewrite_query", "retrieve_hybrid")
+    # Rewrite loop: conditionally loop back or route to fallback
+    builder.add_conditional_edges(
+        "rewrite_query",
+        rewrite_decision,
+        {
+            "retrieve_hybrid": "retrieve_hybrid",
+            "web_fallback": "web_fallback",
+        },
+    )
 
     # Final answer synthesis & reflection
     builder.add_edge("refine_context", "generate")

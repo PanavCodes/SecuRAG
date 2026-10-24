@@ -189,6 +189,21 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Unanswerable request terminates strictly within `max_rewrite_rounds` (2 rounds executed).
   - Acceptance run: `pytest tests/test_agent_routes.py` **5 passed in 84.73s**.
 
+### Step 10: CRAG Evaluator and Rewrite Loop
+- **Document Grading Node** (`src/securag/agent/nodes.py`):
+  - Threshold-based grading: assigns `correct` (any score $\ge 0.7$ or relevant CE logits), `ambiguous` (score $0.3 - 0.7$), or `incorrect` (all $< 0.3$).
+  - `refine_context`: Passage decomposition and selection of high-scoring candidates + verified knowledge graph paths.
+- **Novelty Guard & Rewrite Loop**:
+  - Implemented semantic cosine check using `bge-m3` embedding space.
+  - If rewritten query similarity $\ge 0.90$ to any previously tried query, loop halts immediately to avoid wasteful API churn and routes to fallback.
+  - Loop bounded strictly by `max_rewrite_rounds`.
+- **Termination Verification** (`tests/test_crag_loop.py`):
+  - Path (a) Success: Question `CVE-2021-44228` retrieves confident context, assigns `verdict=correct`, terminates with `termination_reason=success`.
+  - Path (b) Max Rounds: Unanswerable query executes rewrite loop, reaches round 2, terminates with fallback.
+  - Path (c) Novelty Guard: Semantic duplicate triggers cosine similarity threshold, terminates loop safely.
+  - Acceptance run: `pytest tests/test_crag_loop.py` **4 passed in 81.20s**.
+
+
 
 
 
