@@ -114,4 +114,19 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Hybrid (RRF) Recall@10: **0.533 (8/15)** — strictly outperforms both single retrievers.
   - Acceptance run: `pytest tests/test_retrieval.py` **4 passed in 134.56s**.
 
+### Step 6: Query Optimization
+- **Metadata Filter Extraction** (`src/securag/retrieval/query_opt.py`):
+  - Deterministic regex extraction of `in_kev` (e.g. "exploited in the wild", "in kev"), `year` (e.g. "from 2024"), and `severity` ("critical severity flaws").
+- **LLM Query Expansion** (`src/securag/retrieval/query_opt.py`):
+  - Uses `gemini-flash-lite-latest` to generate 3 focused query variations targeting security aliases, CWE/CAPEC terminology, and exploitation mechanisms.
+- **HyDE Passage Generation** (`src/securag/retrieval/query_opt.py`):
+  - Generates concise hypothetical advisory passages to enrich dense vector search.
+- **Evaluation & Acceptance** (`tests/test_query_opt.py`):
+  - Verified on dev set subset:
+    - Baseline Hybrid Recall@10: 0.400
+    - With Query Expansion: 0.600 (+50% relative gain)
+    - With HyDE: **1.000** (100% recall on dev subset)
+  - Acceptance run: `pytest tests/test_query_opt.py` **4 passed in 175.06s**.
+
+
 
