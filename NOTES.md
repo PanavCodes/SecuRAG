@@ -203,6 +203,22 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Path (c) Novelty Guard: Semantic duplicate triggers cosine similarity threshold, terminates loop safely.
   - Acceptance run: `pytest tests/test_crag_loop.py` **4 passed in 81.20s**.
 
+### Step 11: Generation with Citations and Self-Reflection
+- **Citation Validator** (`src/securag/eval/citation_validator.py`):
+  - Created automatic citation validator `validate_citations_against_neo4j` verifying that every cited entity ID (`CVE`, `CWE`, `CAPEC`, `Technique`, `Tactic`, `Chunk`, `path:...`) actually exists in the Neo4j database.
+  - Enforces the hard rule from `AGENTS.md`: *"Every cited ID in an answer must exist in Neo4j (validator required)."*
+- **Synthesis & Generation Node** (`src/securag/agent/nodes.py`):
+  - Strictly grounds answers in retrieved context; every claim cites source bracketed tags (e.g. `[CVE-2021-44228]`, `[CWE-79]`, `[T1021]`, `[TA0008]`).
+  - Robust regex parser handles single IDs, comma-separated IDs, and nested bracket patterns.
+  - Formats structured knowledge graph paths (CWE hierarchy, CVE attack chains, technique mitigations, technique tactics, CAPEC techniques) into semantic context descriptions.
+- **Reflection Node** (`src/securag/agent/nodes.py`):
+  - Self-reflection evaluates faithfulness and verifies all answer citations against Neo4j.
+- **Acceptance Verification** (`tests/test_generation.py`):
+  - Evaluated on 10 answerable questions from `data/eval/dev.jsonl` covering single-fact, multi-hop, and attack chain reasoning.
+  - 100% of questions produced answers with $\ge 1$ citation.
+  - 100% of cited IDs were validated and verified to exist in the Neo4j database.
+  - Acceptance run: `pytest tests/test_generation.py -v -s` **1 passed in 439.12s**.
+
 
 
 

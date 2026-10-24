@@ -11,6 +11,7 @@ from securag.clients import get_fast_llm, get_main_llm, get_embedder
 from securag.config import get_settings
 from securag.retrieval.hybrid import HybridRetriever
 from securag.graph.retrieve import GraphRetriever, link_entities
+from securag.ingest.chunk import Docstore
 from securag.retrieval.rerank import rerank_candidates
 from securag.agent.state import AgentState
 
@@ -39,19 +40,19 @@ def get_graph_retriever() -> GraphRetriever:
 # Node 1: Route Query
 # ---------------------------------------------------------
 
-ROUTER_PROMPT = """You are an expert cybersecurity triage triage router.
+ROUTER_PROMPT = """You are an expert cybersecurity triage router.
 Classify the following query into exactly one of three categories:
-1. "simple": Single-fact lookup, specific CVE details, CWE weakness definition, or single technique explanation.
-2. "multi_hop": Requires multi-hop relational reasoning across entities (e.g. CVE to CWE to ATT&CK technique chain, attack patterns exploiting a weakness, mitigations for an attack pattern).
+1. "simple": Single-fact lookup, specific CVE description/vulnerability definition, CWE weakness definition, or single technique explanation without traversing relationships. Examples: "What is the primary vulnerability in CVE-2021-44228?", "What weakness is identified by CWE-79?", "What attack pattern is described by CAPEC-63?".
+2. "multi_hop": Relational reasoning or graph traversal across entities. This includes: which tactic a technique belongs to, parent/child weakness hierarchies, attack patterns associated with a weakness, techniques linked to attack patterns, mitigations for a technique, or full CVE-to-ATT&CK attack chains. Examples: "Which tactic does ATT&CK technique T1021 belong to?", "What is the parent weakness of CWE-79?", "Which attack patterns in CAPEC relate to CWE-79?", "Which ATT&CK technique is linked to CAPEC-1?".
 3. "out_of_kb": General knowledge questions completely outside cybersecurity threat intelligence (e.g., weather, cooking recipes, geography, sports, pop culture).
 
 Query: "{query}"
 
 Respond with ONLY a JSON object:
-{
+{{
   "route": "simple" | "multi_hop" | "out_of_kb",
   "sub_questions": ["sub-question 1", "sub-question 2"]
-}
+}}
 """
 
 
@@ -60,6 +61,15 @@ def route_query_node(state: AgentState) -> dict[str, Any]:
     start_time = time.time()
     cfg = state.get("config", {})
     query = state["question"]
+
+    # If state already has a pre-determined route and router is disabled, preserve it
+    if state.get("route") and not cfg.get("use_router", True):
+        return {
+            "route": state["route"],
+            "sub_questions": state.get("sub_questions", [query]),
+            "queries_tried": [query],
+            "metrics": {**state.get("metrics", {}), "route_latency": 0.0},
+        }
 
     # If router is disabled by ablation flag, default to 'simple'
     if not cfg.get("use_router", True):
@@ -89,24 +99,35 @@ def route_query_node(state: AgentState) -> dict[str, Any]:
     try:
         resp = model.invoke([HumanMessage(content=ROUTER_PROMPT.format(query=query))])
         text = resp.content.strip()
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0].strip()
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0].strip()
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            data = json.loads(m.group(0))
+        else:
+            data = json.loads(text)
 
-        data = json.loads(text)
         route = data.get("route", "simple")
         sub_qs = data.get("sub_questions", [query])
     except Exception as e:
         logger.warning("Router LLM failed: %s; falling back to entity count heuristic", e)
-        # Heuristic fallback: >= 2 entities or 'chain'/'trace' keyword -> multi_hop
-        if len(linked) >= 2 or any(k in q_lower for k in ["chain", "trace", "attack pattern", "relate"]):
+        # Heuristic fallback: >= 2 entities or relational keywords -> multi_hop
+        rel_keywords = ["chain", "trace", "attack pattern", "relate", "parent", "child", "hierarchy", "associated", "mitigation", "tactic", "exploit"]
+        if len(linked) >= 2 or any(k in q_lower for k in rel_keywords):
             route = "multi_hop"
         elif linked:
             route = "simple"
         else:
             route = "simple"
         sub_qs = [query]
+
+    # Deterministic relational keyword check: if question specifically asks for relationships between entities
+    rel_phrases = [
+        "which tactic", "parent weakness", "child weakness", "attack pattern",
+        "relate to", "relates to", "linked to", "associated with", "belong to",
+        "belongs to", "attack chain", "mitigation", "reachable from", "exploits weakness"
+    ]
+    if route == "simple" and any(phrase in q_lower for phrase in rel_phrases):
+        logger.info("Overriding route from 'simple' to 'multi_hop' based on relational phrase match: '%s'", query)
+        route = "multi_hop"
 
     return {
         "route": route,
@@ -138,6 +159,23 @@ def retrieve_hybrid_node(state: AgentState) -> dict[str, Any]:
         use_hyde=cfg.get("use_hyde", False),
         auto_extract_filters=True,
     )
+
+    # Ensure any explicitly linked entities in the query have their docstore chunks included
+    linked = link_entities(query)
+    docstore = Docstore()
+    for ent in linked:
+        entity_chunks = docstore.get_chunks_by_source_id(ent["id"])
+        for ec in entity_chunks:
+            if ec["chunk_id"] not in {c["chunk_id"] for c in candidates}:
+                candidates.append({
+                    "chunk_id": ec["chunk_id"],
+                    "source_id": ec["source_id"],
+                    "source_type": ec["source_type"],
+                    "text": ec["text"],
+                    "score": 0.5,
+                    "via": "exact_entity_match",
+                    "metadata": ec.get("metadata", {}),
+                })
 
     # Merge with existing candidates if any
     existing = state.get("candidates", [])
@@ -270,9 +308,60 @@ def refine_context_node(state: AgentState) -> dict[str, Any]:
         })
 
     # Include structured graph paths in context
-    for p in paths[:5]:
-        p_ids = p.get("path", [])
-        if p_ids:
+    for p in paths[:8]:
+        p_type = p.get("type", "")
+        details = p.get("details", {})
+        p_ids = [str(x) for x in p.get("path", []) if x is not None]
+
+        if p_type == "cwe_hierarchy" and details:
+            text = f"CWE Hierarchy: Weakness {details.get('cwe_id')} has parent weakness {details.get('parent_id')} ({details.get('parent_name')})."
+            context.append({
+                "chunk_id": f"graph:hierarchy:{details.get('cwe_id')}:{details.get('parent_id')}",
+                "source_id": details.get("parent_id") or (p_ids[0] if p_ids else "graph"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_type == "cve_attack_chain" and details:
+            text = f"Attack Chain: CVE {details.get('cve_id')} links to weakness {details.get('cwe_id')}, attack pattern {details.get('capec_id')}, ATT&CK technique {details.get('technique_id')} ({details.get('technique_name')}) under tactic {details.get('tactic_name')}."
+            context.append({
+                "chunk_id": f"graph:chain:{details.get('cve_id')}",
+                "source_id": details.get("technique_id") or details.get("cve_id"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_type == "technique_mitigation" and details:
+            text = f"Mitigation: ATT&CK technique {details.get('technique_id')} is mitigated by {details.get('mitigation_id')} ({details.get('mitigation_name')})."
+            context.append({
+                "chunk_id": f"graph:mitigation:{details.get('technique_id')}",
+                "source_id": details.get("mitigation_id") or details.get("technique_id"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_type == "cwe_attack_patterns" and details:
+            text = f"Weakness {details.get('cwe_id')} relates to CAPEC attack pattern {details.get('capec_id')} ({details.get('capec_name')})."
+            context.append({
+                "chunk_id": f"graph:capec:{details.get('cwe_id')}:{details.get('capec_id')}",
+                "source_id": details.get("capec_id") or (p_ids[0] if p_ids else "graph"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_type == "technique_tactic" and details:
+            text = f"ATT&CK Technique {details.get('technique_id')} belongs to tactic {details.get('tactic_id')} ({details.get('tactic_name')})."
+            context.append({
+                "chunk_id": f"graph:tactic:{details.get('technique_id')}:{details.get('tactic_id')}",
+                "source_id": details.get("tactic_id") or (p_ids[0] if p_ids else "graph"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_type == "capec_technique" and details:
+            text = f"CAPEC attack pattern {details.get('capec_id')} maps to ATT&CK technique {details.get('technique_id')} ({details.get('technique_name')})."
+            context.append({
+                "chunk_id": f"graph:technique:{details.get('capec_id')}:{details.get('technique_id')}",
+                "source_id": details.get("technique_id") or (p_ids[0] if p_ids else "graph"),
+                "text": text,
+                "via": "graph_path",
+            })
+        elif p_ids:
             context.append({
                 "chunk_id": f"path:{'->'.join(p_ids)}",
                 "source_id": p_ids[0] if p_ids else "graph",
@@ -382,7 +471,8 @@ def web_fallback_node(state: AgentState) -> dict[str, Any]:
 
 GENERATE_PROMPT = """You are SecuRAG, a threat-intelligence triage assistant.
 Answer the user's question accurately and concisely based ONLY on the provided Context.
-Every claim must cite its source using bracketed IDs like [CVE-...], [CWE-...], [T...], or [chunk_id].
+Every claim must cite its source using individual bracketed IDs like [CVE-...], [CWE-...], [T...], [TA...], or [chunk_id].
+Do not nest brackets (e.g. write "[T1021] [TA0008]", never "[TA0008, [T1021]]").
 If the context does not contain sufficient evidence to answer, state: "The requested information was not found in the SecuRAG cybersecurity knowledge base."
 
 Context:
@@ -418,9 +508,17 @@ def generate_node(state: AgentState) -> dict[str, Any]:
         logger.warning("Generation LLM failed: %s", e)
         answer = "The requested information was not found in the SecuRAG cybersecurity knowledge base."
 
-    # Extract bracketed citations e.g. [CVE-2021-44228], [CWE-79], [T1021]
-    citation_tags = re.findall(r"\[([A-Za-z0-9_\-\.\:]+)\]", answer)
-    citations = list(dict.fromkeys(citation_tags))  # deduplicate preserving order
+    # Extract bracketed citations e.g. [CVE-2021-44228], [CWE-79], [T1021], [TA0008]
+    # Robustly handles single [ID], comma-separated [ID1, ID2], and nested brackets
+    bracket_blocks = re.findall(r"\[([^\]]+)\]", answer)
+    raw_citations = []
+    for block in bracket_blocks:
+        tokens = re.findall(r"[A-Za-z0-9_\-\.\:]+", block)
+        for tok in tokens:
+            if len(tok) >= 2 and tok.lower() not in {"and", "or", "in", "to", "via", "for", "with"}:
+                raw_citations.append(tok)
+
+    citations = list(dict.fromkeys(raw_citations))  # deduplicate preserving order
 
     return {
         "answer": answer,
@@ -434,7 +532,7 @@ def generate_node(state: AgentState) -> dict[str, Any]:
 # ---------------------------------------------------------
 
 def reflect_node(state: AgentState) -> dict[str, Any]:
-    """Verify answer citations and faithfulness."""
+    """Verify answer citations and faithfulness against Neo4j and context."""
     start_time = time.time()
     cfg = state.get("config", {})
 
@@ -444,14 +542,21 @@ def reflect_node(state: AgentState) -> dict[str, Any]:
     answer = state.get("answer", "")
     citations = state.get("citations", [])
 
-    # Basic check: if answer has citations or claims not found in KB
     faithful = True
     unsupported = []
+
     if "not found in the securag" in answer.lower():
         faithful = True
     elif not citations and len(answer) > 50:
         faithful = False
         unsupported.append("Answer contains claims without citations.")
+    elif citations:
+        # Validate all cited IDs against Neo4j
+        from securag.eval.citation_validator import validate_citations_against_neo4j
+        val_res = validate_citations_against_neo4j(citations)
+        if not val_res["all_valid"]:
+            faithful = False
+            unsupported.append(f"Cited IDs not found in Neo4j: {val_res['invalid_citations']}")
 
     return {
         "reflection": {

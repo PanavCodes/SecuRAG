@@ -113,6 +113,8 @@ def get_llm(model_name: str, temperature: float = 0.0) -> Any:
         "model": model_name,
         "temperature": temperature,
         "api_key": settings.llm_api_key,
+        "timeout": 25.0,
+        "max_retries": 2,
     }
     if settings.llm_base_url:
         kwargs["base_url"] = settings.llm_base_url

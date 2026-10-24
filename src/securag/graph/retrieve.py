@@ -153,6 +153,42 @@ def get_cwe_hierarchy(cwe_id: str, driver: Driver | None = None, limit: int = 10
         return session.run(cypher, cwe_id=cwe_id, limit=limit).data()
 
 
+def get_cwe_attack_patterns(cwe_id: str, driver: Driver | None = None, limit: int = 15) -> list[dict[str, Any]]:
+    """Find CAPEC attack patterns related to a CWE weakness."""
+    d = driver or get_neo4j_driver()
+    cypher = """
+    MATCH (w:CWE {id: $cwe_id})-[:RELATED_ATTACK_PATTERN]->(p:CAPEC)
+    RETURN p.id AS capec_id, p.name AS capec_name, w.id AS cwe_id
+    LIMIT $limit
+    """
+    with d.session() as session:
+        return session.run(cypher, cwe_id=cwe_id, limit=limit).data()
+
+
+def get_technique_tactics(technique_id: str, driver: Driver | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    """Find ATT&CK tactics a technique belongs to."""
+    d = driver or get_neo4j_driver()
+    cypher = """
+    MATCH (t:Technique {id: $technique_id})-[:IN_TACTIC]->(ta:Tactic)
+    RETURN ta.id AS tactic_id, ta.name AS tactic_name, t.id AS technique_id
+    LIMIT $limit
+    """
+    with d.session() as session:
+        return session.run(cypher, technique_id=technique_id, limit=limit).data()
+
+
+def get_capec_techniques(capec_id: str, driver: Driver | None = None, limit: int = 10) -> list[dict[str, Any]]:
+    """Find ATT&CK techniques related to a CAPEC attack pattern."""
+    d = driver or get_neo4j_driver()
+    cypher = """
+    MATCH (p:CAPEC {id: $capec_id})-[:RELATED_TECHNIQUE]->(t:Technique)
+    RETURN t.id AS technique_id, t.name AS technique_name, p.id AS capec_id
+    LIMIT $limit
+    """
+    with d.session() as session:
+        return session.run(cypher, capec_id=capec_id, limit=limit).data()
+
+
 def get_kev_exploited_cves(cwe_id: str | None = None, driver: Driver | None = None, limit: int = 10) -> list[dict[str, Any]]:
     """Find KEV-exploited CVEs optionally filtered by CWE."""
     d = driver or get_neo4j_driver()
@@ -185,6 +221,7 @@ def expand_entity_subgraph(
     cypher = f"""
     MATCH path = (start)-[r*1..{bounded_hops}]-(target)
     WHERE coalesce(start.id, start.key) = $entity_id
+      AND NOT target:Chunk
     RETURN [n IN nodes(path) | {{
         id: coalesce(n.id, n.key),
         label: labels(n)[0],
@@ -247,6 +284,17 @@ class GraphRetriever:
                         "path": [mid, eid],
                         "details": m,
                     })
+                tactics = get_technique_tactics(eid, driver=self.driver, limit=limit)
+                for t in tactics:
+                    tid = t.get("tactic_id")
+                    if tid:
+                        node_ids_found.add(tid)
+                    paths.append({
+                        "type": "technique_tactic",
+                        "start_id": eid,
+                        "path": [eid, tid],
+                        "details": t,
+                    })
 
             elif etype == "cwe":
                 parents = get_cwe_hierarchy(eid, driver=self.driver, limit=limit)
@@ -259,6 +307,30 @@ class GraphRetriever:
                         "start_id": eid,
                         "path": h_path,
                         "details": p,
+                    })
+                capecs = get_cwe_attack_patterns(eid, driver=self.driver, limit=limit)
+                for c in capecs:
+                    cid = c.get("capec_id")
+                    if cid:
+                        node_ids_found.add(cid)
+                    paths.append({
+                        "type": "cwe_attack_patterns",
+                        "start_id": eid,
+                        "path": [eid, cid],
+                        "details": c,
+                    })
+
+            elif etype == "capec":
+                techs = get_capec_techniques(eid, driver=self.driver, limit=limit)
+                for t in techs:
+                    tid = t.get("technique_id")
+                    if tid:
+                        node_ids_found.add(tid)
+                    paths.append({
+                        "type": "capec_technique",
+                        "start_id": eid,
+                        "path": [eid, tid],
+                        "details": t,
                     })
 
             # 2. General bounded k-hop traversal
