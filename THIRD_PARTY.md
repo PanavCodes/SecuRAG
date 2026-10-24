@@ -19,6 +19,7 @@ This document tracks all external reference repositories, packages, and data sou
 | `neo4j-graphrag-python` | https://github.com/neo4j/neo4j-graphrag-python | `6265f046e1578854d1f2ecaec6e781ffed3f8ede` | Neo4j property graph retrieval & schema utilities | Apache-2.0 |
 | `microsoft/graphrag` | https://github.com/microsoft/graphrag | `c600ff80b77b9b62c47d539a3ac9569e95d8949b` | Baseline GraphRAG comparison reference | MIT |
 | `ragas` | https://github.com/explodinggradients/ragas | `298b68274234c060deacab3cf5fb52aa3a20e885` | Evaluation harness for faithfulness & precision/recall | Apache-2.0 |
+| `GraphER` | arXiv:2603.24925 | *Paper only (no public repo)* | Query-time topological graph smoothing reranker (`src/securag/retrieval/graph_rerank.py`) | Academic Paper |
 
 ---
 
