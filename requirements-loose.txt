@@ -1,0 +1,26 @@
+# Unpinned fallback. Use if requirements.txt fails to resolve.
+langgraph
+langgraph-checkpoint-sqlite
+langchain
+langchain-community
+langchain-text-splitters
+neo4j
+neo4j-graphrag
+pinecone
+sentence-transformers
+rank-bm25
+ragas
+datasets
+fastapi
+uvicorn
+streamlit
+pydantic
+pydantic-settings
+python-dotenv
+pandas
+pyarrow
+lxml
+stix2
+tqdm
+pytest
+langsmith

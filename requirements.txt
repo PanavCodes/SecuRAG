@@ -1,0 +1,28 @@
+# Resolved with `pip install --dry-run` on Linux, Python 3.12, 2026-10-24: no conflicts.
+# If pip fails on your machine, use requirements-loose.txt instead.
+# Install PyTorch FIRST (see SETUP.md), then: pip install -r requirements.txt
+langgraph==1.2.17
+langgraph-checkpoint-sqlite==3.1.2
+langchain==1.4.7
+langchain-community==0.3.31
+langchain-text-splitters==1.1.3
+neo4j==6.4.1
+neo4j-graphrag==1.22.0
+pinecone==10.2.0
+sentence-transformers==6.2.0
+rank-bm25==0.2.2
+ragas==0.4.3
+datasets==5.1.0
+fastapi==0.162.0
+uvicorn==0.54.0
+streamlit==1.66.1
+pydantic==2.14.1
+pydantic-settings==2.16.1
+python-dotenv==1.2.4
+pandas==3.1.0
+pyarrow==26.0.0
+lxml==6.1.3
+stix2==3.0.2
+tqdm==4.70.1
+pytest==9.1.1
+langsmith==0.14.12
