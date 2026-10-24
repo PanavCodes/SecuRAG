@@ -79,3 +79,21 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Idempotency test: Ingestion re-executed; node counts verified completely unchanged on second run.
   - Multi-hop traversal test: Verified Cypher query `(c:CVE)-[:HAS_WEAKNESS]->(w:CWE)-[:RELATED_ATTACK_PATTERN]->(p:CAPEC)-[:RELATED_TECHNIQUE]->(t:Technique)-[:IN_TACTIC]->(ta:Tactic)` returns multiple real chains (e.g. `CVE-2024-22334 -> CWE-732 -> CAPEC-1 -> T1574.010 -> Stealth`).
   - Acceptance run: `pytest tests/test_graph.py` **3 passed in 6.46s**.
+
+### Step 4: Chunk, Embed, Store
+- **Docstore & Chunking** (`src/securag/ingest/chunk.py`):
+  - Created SQLite docstore at `data/processed/docstore.sqlite` indexing 23,757 chunks:
+    - 20,000 CVE chunks (namespace `cve`, metadata: `cve_id`, `in_kev`, `cvss_score`, `cvss_severity`, `published_year`).
+    - 3,757 ATT&CK/CWE/CAPEC chunks (namespace `attack`, metadata: `source_type`, `source_id`, `title`).
+  - Neo4j chunk synchronization: Created 23,757 `(:Chunk)` nodes connected via `[:DESCRIBES]` to their corresponding domain nodes (`:CVE`, `:CWE`, `:CAPEC`, `:Technique`, `:Tactic`, `:Mitigation`).
+- **Pinecone Vector Indexing** (`src/securag/ingest/embed_index.py`):
+  - Pinecone serverless index (`securag`, 1024-dim, cosine, AWS `us-east-1`).
+  - Embedded using `BAAI/bge-m3` on CUDA.
+  - Sizing & concurrency: Batch size 16 (prevents CUDA OOM on long descriptions) with 8 concurrent worker threads overlapping GPU encoding with HTTPS upsert roundtrips (~20.5 chunks/s).
+  - All 23,757 chunks embedded and upserted: 3,757 in namespace `attack` and 20,000 in namespace `cve`.
+- **Acceptance Verification** (`tests/test_embed.py`):
+  - `test_docstore_and_neo4j_chunks`: Neo4j DESCRIBES count (23,757) strictly equals docstore count (23,757).
+  - `test_pinecone_namespace_counts`: Pinecone serverless index counts verified matching docstore counts.
+  - `test_pinecone_semantic_query_top5`: Query `"cross-site scripting"` against `attack` namespace returns `CWE-79` in top 5 (rank 4, score 0.6189).
+  - Acceptance run: `pytest tests/test_embed.py` **3 passed in 44.74s**.
+
