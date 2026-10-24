@@ -1,0 +1,8 @@
+Config,Description,Context_Recall,Context_Precision,Faithfulness,Answer_Relevancy,Tier1_Acc,Tier2_Acc,Tier3_Acc,MultiHop_F1,Mean_Latency_s
+Config A (Naive),"Dense only (BGE-M3), no rerank, no router, no CRAG loop",0.594,0.417,0.7,0.655,0.5,0.5,0.0,0.425,11.94
+Config B (+BM25),Hybrid retrieval (Dense + BM25 with RRF),0.656,0.458,0.4,0.655,0.0,0.0,0.0,0.25,3.77
+Config C (+CrossEncoder),Hybrid + Neural CrossEncoder reranking (bge-reranker-v2-m3),0.656,0.521,0.4,0.655,0.0,0.0,0.0,0.25,31.98
+Config D (+GraphRetrieval),Hybrid + CE + Neo4j relational graph retrieval,0.656,0.521,0.4,0.655,0.0,0.0,0.0,0.25,31.33
+Config E (+GraphER),Hybrid + CE + Graph + GraphER topological smoothing reranking,0.656,0.521,0.4,0.655,0.0,0.0,0.0,0.25,31.71
+Config F (+CRAG Loop),Hybrid + CE + Graph + GraphER + CRAG document grading & rewrite loop,0.656,0.521,0.4,0.655,0.0,0.0,0.0,0.25,34.69
+Config G (Full SecuRAG),Full SecuRAG agent (Config F + LLM Router + Self-Reflection),0.969,0.747,0.4,0.655,0.0,0.0,0.0,0.25,21.19

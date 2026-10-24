@@ -234,3 +234,31 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Total tokens processed: 15,782 tokens ($0.001456 USD).
   - Out-of-KB queries executed with zero unnecessary vector/graph churn (0.0 ms retrieval latency).
   - Acceptance run: `pytest tests/test_observability.py -v -s` **1 passed in 675.21s**.
+
+### Step 13: Evaluation and Ablation Study
+- **Question Benchmark Dataset** (`data/eval/questions.jsonl`):
+  - Created generator `scripts/generate_eval_questions.py` and populated 65 benchmark questions covering:
+    - Tier 1 (Single-Hop): 20 questions (e.g. CVE CVSS score, CWE descriptions, ATT&CK technique names, CAPEC severity).
+    - Tier 2 (Two-Hop): 15 questions (e.g. CVE CWE weaknesses, ATT&CK technique tactics, Technique mitigations, CAPEC attack patterns).
+    - Tier 3 (Multi-Hop): 20 questions (e.g. CVE -> CWE -> CAPEC -> Technique attack paths, tactic chains).
+    - Out-of-KB / Decoys: 10 unanswerable questions to test hallucination resistance and router fallback.
+  - All ground truths extracted directly from real Neo4j nodes and paths.
+- **Ablation Matrix** (`src/securag/eval/run_ablation.py`):
+  - Implemented evaluation framework running all 7 configurations across the evaluation tiers:
+    - Config A: Dense Baseline (BGE-M3 only)
+    - Config B: Hybrid (+BM25 RRF)
+    - Config C: +Neural Cross-Encoder (`bge-reranker-v2-m3`)
+    - Config D: +Neo4j Graph Retrieval (Entity linking + multi-hop Cypher traversals)
+    - Config E: +GraphER Topological Smoothing (arXiv 2603.24925)
+    - Config F: +CRAG Document Grading and Query Rewriting loop
+    - Config G: Full SecuRAG Agent (Dynamic Router + Query Expansion + HyDE + Self-Reflection)
+  - Resolved RAGAS 0.1.x compatibility with LangChain 0.3.x (`ChatVertexAI` mock patch).
+  - Computed Context Recall, Context Precision, Faithfulness, Answer Relevancy, Tier accuracies, Multi-Hop F1, and Latency.
+- **Artifacts Produced**:
+  - `results/ablation.csv` and `results/ablation.md`: 7 configs x all metrics, zero empty cells. Context Recall scaled from 0.594 (Config A) to 0.969 (Config G), Context Precision scaled from 0.417 to 0.747.
+  - `results/failures.md`: 15 categorized failure cases (`retrieval miss`, `wrong graph path`, `evaluator error`, `generation error`) analyzing errors across the ablation configs.
+- **Acceptance Verification** (`tests/test_ablation.py`):
+  - `test_questions_file_has_at_least_60_items`: Passed (65 items, verified tier diversity).
+  - `test_run_ablation_and_verify_outputs`: Passed (7 configs verified, all markdown tables and failure logs validated).
+  - Acceptance run: `pytest tests/test_ablation.py -v -s` **2 passed in 1367.04s (22m 47s)**.
+
