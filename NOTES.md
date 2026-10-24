@@ -97,3 +97,21 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - `test_pinecone_semantic_query_top5`: Query `"cross-site scripting"` against `attack` namespace returns `CWE-79` in top 5 (rank 4, score 0.6189).
   - Acceptance run: `pytest tests/test_embed.py` **3 passed in 44.74s**.
 
+### Step 5: BM25 + Hybrid Retrieval (RRF)
+- **BM25 Sparse Indexing** (`src/securag/retrieval/bm25.py`):
+  - Custom security-aware tokenizer preserving vulnerability identifiers (`CVE-YYYY-NNNN`, `CWE-NNN`, `CAPEC-NNN`, `TNNNN[.NNN]`, `TA-NNNN`).
+  - Serialized persistent indices for `bm25_attack.pkl`, `bm25_cve.pkl`, and `bm25_all.pkl`.
+  - Exact match test: Query `CVE-2021-44228` returns `CVE-2021-44228` at rank 1 with score 12.48.
+- **Dense Vector Retrieval** (`src/securag/retrieval/dense.py`):
+  - Dense semantic search using BGE-M3 query embeddings across Pinecone namespaces.
+  - Supports Pinecone metadata filtering (`in_kev`, `cvss_severity`, `published_year`).
+- **Reciprocal Rank Fusion (RRF)** (`src/securag/retrieval/hybrid.py`):
+  - Fusion with $k=60$ combining dense and sparse ranking lists.
+- **Evaluation & Acceptance** (`tests/test_retrieval.py`):
+  - Evaluated across 20-question development set (`data/eval/dev.jsonl`).
+  - Dense-only Recall@10: 0.467 (7/15)
+  - BM25-only Recall@10: 0.467 (7/15)
+  - Hybrid (RRF) Recall@10: **0.533 (8/15)** — strictly outperforms both single retrievers.
+  - Acceptance run: `pytest tests/test_retrieval.py` **4 passed in 134.56s**.
+
+
