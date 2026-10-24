@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     web_search_provider: str = Field(default="", alias="WEB_SEARCH_PROVIDER")
     web_search_api_key: str = Field(default="", alias="WEB_SEARCH_API_KEY")
 
+    # Cost and Token Pricing (USD per 1M tokens)
+    cost_per_1m_input_tokens: float = Field(default=0.075, alias="COST_PER_1M_INPUT_TOKENS")
+    cost_per_1m_output_tokens: float = Field(default=0.300, alias="COST_PER_1M_OUTPUT_TOKENS")
+
     # Feature Flags for Pipeline & Ablation (Section 7 of build_agent.md)
     use_bm25: bool = Field(default=True, alias="USE_BM25")
     use_query_expansion: bool = Field(default=False, alias="USE_QUERY_EXPANSION")

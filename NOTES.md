@@ -219,9 +219,18 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - 100% of cited IDs were validated and verified to exist in the Neo4j database.
   - Acceptance run: `pytest tests/test_generation.py -v -s` **1 passed in 439.12s**.
 
-
-
-
-
-
-
+### Step 12: Observability and Performance Benchmarking
+- **Runtime Metrics Logger** (`src/securag/eval/metrics_logger.py`):
+  - Captures per-query execution metrics across all pipeline stages: `route_latency_ms`, `retrieve_hybrid_latency_ms`, `retrieve_graph_latency_ms`, `rerank_latency_ms`, `grade_latency_ms`, `refine_latency_ms`, `rewrite_latency_ms`, `generate_latency_ms`, `reflect_latency_ms`, and `fallback_latency_ms`.
+  - Measures total latency, token usage (`tokens_in`, `tokens_out` via tiktoken), and estimated financial costs using configurable price schedules in `Settings`.
+  - Persists query telemetry to `results/runtime_metrics.csv`.
+- **Metrics Summary Script** (`scripts/summarize_metrics.py`):
+  - Automatically analyzes `results/runtime_metrics.csv` to calculate P50 and P95 latency percentiles for the entire pipeline and individual nodes.
+- **Acceptance Verification** (`tests/test_observability.py`):
+  - Evaluated on all 20 dev benchmark questions (`data/eval/dev.jsonl`).
+  - Total queries evaluated: 20 (`simple`: 3, `multi_hop`: 12, `out_of_kb`: 5).
+  - P50 Total Pipeline Latency: **24,683.86 ms (~24.7s)**
+  - P95 Total Pipeline Latency: **86,265.00 ms (~86.3s)**
+  - Total tokens processed: 15,782 tokens ($0.001456 USD).
+  - Out-of-KB queries executed with zero unnecessary vector/graph churn (0.0 ms retrieval latency).
+  - Acceptance run: `pytest tests/test_observability.py -v -s` **1 passed in 675.21s**.

@@ -1,0 +1,21 @@
+query_id,question,route,rewrite_rounds,total_latency_ms,route_latency_ms,retrieve_hybrid_latency_ms,retrieve_graph_latency_ms,rerank_latency_ms,grade_latency_ms,refine_latency_ms,rewrite_latency_ms,generate_latency_ms,reflect_latency_ms,fallback_latency_ms,tokens_in,tokens_out,estimated_cost_usd
+q001,What is the primary vulnerability in CVE-2021-44228?,simple,0,59537.37,14271.08,28087.14,0.0,11120.33,0.0,0.0,0.0,5970.34,88.47,0.0,699,52,6.8e-05
+q002,What weakness is identified by CWE-79?,simple,0,45698.24,31819.39,4696.3,0.0,354.25,0.0,0.0,0.0,8820.78,7.51,0.0,517,65,5.8e-05
+q003,What is MITRE ATT&CK technique T1021?,simple,0,19946.86,5692.26,4023.74,0.0,740.64,0.0,0.0,0.0,9482.82,7.4,0.0,729,96,8.3e-05
+q004,What attack pattern is described by CAPEC-63?,multi_hop,0,24893.8,10019.8,4243.04,74.38,813.13,0.0,0.0,0.0,9737.33,6.12,0.0,683,48,6.6e-05
+q005,What is the parent weakness of CWE-79?,multi_hop,0,107643.21,31312.62,3514.3,264.46,61034.59,0.0,0.0,0.0,11502.83,14.41,0.0,747,58,7.3e-05
+q006,Which weaknesses are associated with CVE-2021-44228?,multi_hop,0,36343.88,9352.33,4783.52,94.83,1517.84,0.0,0.0,0.0,20565.69,29.67,0.0,879,66,8.6e-05
+q007,Which attack patterns in CAPEC relate to CWE-79?,multi_hop,0,85139.83,9202.02,4351.1,52.4,65143.74,0.0,0.0,0.0,6361.62,28.94,0.0,660,125,8.7e-05
+q008,Which tactic does ATT&CK technique T1021 belong to?,multi_hop,0,26806.17,11074.24,3927.44,32.95,1596.01,0.0,0.0,0.0,10159.06,16.46,0.0,996,23,8.2e-05
+q009,What attack pattern corresponds to CAPEC-1?,multi_hop,0,23774.88,12151.53,4151.88,38.05,1550.25,0.0,0.0,0.0,5874.32,8.87,0.0,643,36,5.9e-05
+q010,Which ATT&CK technique is linked to CAPEC-1?,multi_hop,0,57017.69,8784.53,3594.07,50.71,34034.77,0.0,0.0,0.0,10519.16,34.45,0.0,1186,36,0.0001
+q011,Trace the full attack chain from CVE-2024-22334 to an ATT&CK technique.,multi_hop,0,24284.51,12025.54,4647.81,168.83,1480.93,0.0,0.0,0.0,5942.09,19.31,0.0,1324,184,0.000155
+q012,What technique and tactic are reachable from CVE-2024-38864?,multi_hop,0,24473.92,9307.22,4594.82,128.91,1348.85,0.0,0.0,0.0,9069.88,24.24,0.0,825,136,0.000103
+q013,How does cross-site scripting in CWE-79 relate to lateral movement or attack patterns?,multi_hop,0,49752.11,8338.06,4171.35,50.94,1170.01,0.0,0.0,0.0,35985.66,36.08,0.0,959,88,9.8e-05
+q014,What weakness does CVE-2024-1709 exhibit and which attack pattern exploits it?,multi_hop,0,59131.67,7008.13,4391.59,140.29,37555.59,0.0,0.0,0.0,10018.02,18.05,0.0,2356,63,0.000196
+q015,Which attack pattern exploits weakness CWE-94 in CVE-2024-20359?,multi_hop,0,21115.75,8368.49,3551.93,421.12,2185.6,0.0,0.0,0.0,6568.9,19.72,0.0,1171,50,0.000103
+q016,What is the capital of Australia?,out_of_kb,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,36,16,7e-06
+q017,Who won the FIFA World Cup in 2022?,out_of_kb,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,44,16,8e-06
+q018,What is the best recipe for chocolate chip cookies?,out_of_kb,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,42,16,8e-06
+q019,What is the current price of Bitcoin?,out_of_kb,0,0.53,0.53,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,38,16,8e-06
+q020,How do you calculate the area of a circle?,out_of_kb,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,42,16,8e-06
