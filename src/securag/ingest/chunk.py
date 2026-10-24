@@ -86,6 +86,23 @@ class Docstore:
                 }
         return None
 
+    def get_chunks_by_source_id(self, source_id: str) -> list[dict[str, Any]]:
+        """Return all chunks matching a given source_id."""
+        with self.get_connection() as conn:
+            rows = conn.execute("SELECT * FROM chunks WHERE source_id = ? ORDER BY position", (source_id,)).fetchall()
+            return [
+                {
+                    "chunk_id": r["chunk_id"],
+                    "namespace": r["namespace"],
+                    "source_id": r["source_id"],
+                    "source_type": r["source_type"],
+                    "position": r["position"],
+                    "text": r["text"],
+                    "metadata": json.loads(r["meta_json"]),
+                }
+                for r in rows
+            ]
+
     def get_namespace_counts(self) -> dict[str, int]:
         with self.get_connection() as conn:
             rows = conn.execute("SELECT namespace, count(*) AS cnt FROM chunks GROUP BY namespace").fetchall()

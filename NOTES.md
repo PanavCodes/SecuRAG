@@ -128,5 +128,24 @@ Running log. The agent updates this every step: assumptions, deviations from doc
     - With HyDE: **1.000** (100% recall on dev subset)
   - Acceptance run: `pytest tests/test_query_opt.py` **4 passed in 175.06s**.
 
+### Step 7: Graph Retrieval
+- **Entity Linking** (`src/securag/graph/retrieve.py`):
+  - Regex patterns for `CVE-YYYY-NNNN`, `CWE-NNN`, `CAPEC-NNN`, `TNNNN[.NNN]`, `TA-NNNN`.
+  - Phrase and name matching loaded from Neo4j against Technique and CWE catalog names (e.g. "Remote Services" -> `T1021`, "Cross-site Scripting" -> `CWE-79`).
+- **Fixed Cypher Templates**:
+  - `trace_cve_attack_chain`: Traverses `(c:CVE)-[:HAS_WEAKNESS]->(w:CWE)-[:RELATED_ATTACK_PATTERN]->(p:CAPEC)-[:RELATED_TECHNIQUE]->(t:Technique)-[:IN_TACTIC]->(ta:Tactic)`.
+  - `get_technique_mitigations`: Traverses `(m:Mitigation)-[:MITIGATES]->(t:Technique)`.
+  - `get_cwe_hierarchy`: Traverses `(w:CWE)-[:CHILD_OF*1..3]->(parent:CWE)`.
+  - `get_kev_exploited_cves`: Traverses `(:CVE {in_kev: true})-[:HAS_WEAKNESS]->(:CWE)`.
+- **Bounded $k$-Hop Neighborhood Expansion**:
+  - Dynamically traverses $1..k$ hops bounded strictly to $k \le 3$ with mandatory `LIMIT`.
+  - Extracts path node dictionaries, relationship types, and attached descriptive chunk texts from SQLite docstore.
+- **Static Cypher Safety Verification**:
+  - Scanned all Cypher queries in `retrieve.py`; verified 100% contain explicit `LIMIT` clauses and 0 unbounded traversals exist.
+- **Acceptance Verification** (`tests/test_graph_retrieval.py`):
+  - Multi-hop dev question `q011` (`CVE-2024-22334`) returns exact gold chain `['CVE-2024-22334', 'CWE-732', 'CAPEC-1', 'T1574.010']`.
+  - Acceptance run: `pytest tests/test_graph_retrieval.py` **5 passed in 1.62s**.
+
+
 
 
