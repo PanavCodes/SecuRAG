@@ -146,6 +146,27 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Multi-hop dev question `q011` (`CVE-2024-22334`) returns exact gold chain `['CVE-2024-22334', 'CWE-732', 'CAPEC-1', 'T1574.010']`.
   - Acceptance run: `pytest tests/test_graph_retrieval.py` **5 passed in 1.62s**.
 
+### Step 8: Rerankers
+- **GraphER Topological Reranker** (`src/securag/retrieval/graph_rerank.py`):
+  - Implemented from arXiv:2603.24925 (Miao et al., Oracle AI) since no public repository exists.
+  - Relation key graph: Extracts structured keys (CWE IDs, ATT&CK Technique IDs, CAPEC IDs, Product keys) from candidate metadata. Connects candidates sharing relation keys into an in-memory query-time candidate graph.
+  - Graph Cohesive Smoothing: Iteratively updates scores:
+    $$s_i^{(t+1)} = \alpha \cdot s_i^{(0)} + (1 - \alpha) \cdot \frac{1}{|N(i)|} \sum_{j \in N(i)} s_j^{(t)}$$
+    (default $\alpha = 0.7$, 2 iterations).
+  - **Simplifications from the paper (documented per spec)**:
+    1. *Graph Structure*: The paper considers heterogeneous edge weights and learned relation projections. Our implementation uses unweighted undirected edges based on common relation key intersection, keeping query latency under 1ms.
+    2. *Propagation*: We implement cohesive neighbor mean smoothing across candidate subgraphs rather than full random-walk-with-restart matrix inversion.
+    3. *Relation Keys*: Keys are extracted directly from pre-parsed normalized metadata dictionaries rather than executing runtime entity recognition over raw text.
+- **Neural Cross-Encoder** (`src/securag/retrieval/rerank.py`):
+  - Uses `BAAI/bge-reranker-v2-m3` on CUDA.
+  - Pairs user query with candidate text, predicts cross-attention relevance scores, and re-ranks top candidates.
+- **Ablation & Toggle Verification**:
+  - Independent toggles verified for `use_graph_rerank` and `use_cross_encoder`.
+  - Synthetic test verifies low-scoring candidate `c3` (0.20) connected to high-scoring candidates `c1` (0.90) and `c2` (0.85) is boosted to 0.4531 and overtakes isolated candidate `c4` (0.4500).
+  - Cross-encoder scores relevant Log4j passage (0.0840) vs irrelevant cookie recipe (0.0000).
+  - Acceptance run: `pytest tests/test_rerank.py` **3 passed in 27.67s**.
+
+
 
 
 
