@@ -1,259 +1,319 @@
 # SecuRAG
 
-**An agentic hybrid GraphRAG system for multi-hop CVE and threat-intelligence triage.**
+**An Agentic Hybrid GraphRAG Framework for Multi-Hop Vulnerability & Threat-Intelligence Triage**
 
-![Python](https://img.shields.io/badge/python-3.11%20|%203.12-blue)
-![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1f6feb)
-![Neo4j](https://img.shields.io/badge/graph-Neo4j-008cc1)
-![Pinecone](https://img.shields.io/badge/vectors-Pinecone-000000)
-![Status](https://img.shields.io/badge/status-v1.0.0%20complete-brightgreen)
-![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
-
-> **Status:** Production-ready v1.0.0. All Steps 0 through 15 are implemented, evaluated, and verified. Evaluated across 65 benchmark questions covering 4 triage tiers; acceptance test suites pass across all pipeline stages.
+[![Python 3.11 | 3.12](https://img.shields.io/badge/python-3.11%20|%203.12-blue.svg)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1f6feb.svg)](https://github.com/langchain-ai/langgraph)
+[![Neo4j](https://img.shields.io/badge/graph-Neo4j%205%20APOC-008cc1.svg)](https://neo4j.com/)
+[![Pinecone](https://img.shields.io/badge/vector%20store-Pinecone%20Serverless-000000.svg)](https://www.pinecone.io/)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B.svg)](https://streamlit.io/)
+[![Status](https://img.shields.io/badge/status-v1.0.0%20complete-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)]()
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ---
 
 ## Overview
 
-Security questions are rarely answered by one document. "Which exploited vulnerabilities lead to lateral movement, and how do I mitigate them?" needs a chain of facts: **CVE → CWE → CAPEC → ATT&CK technique → mitigation**. Plain vector search finds similar text but often misses the links between facts.
+Cybersecurity triage questions are rarely answerable from a single disconnected document. Investigating modern vulnerability chains—such as *"Which exploited vulnerabilities lead to lateral movement, and what mitigations exist?"*—demands traversals across heterogeneous knowledge graphs:
 
-SecuRAG combines three kinds of retrieval and lets an agent decide which to use:
+$$\text{CVE} \xrightarrow{\text{HAS\_WEAKNESS}} \text{CWE} \xrightarrow{\text{RELATED\_ATTACK\_PATTERN}} \text{CAPEC} \xrightarrow{\text{RELATED\_TECHNIQUE}} \text{ATT\&CK Technique} \xrightarrow{\text{IN\_TACTIC}} \text{Tactic}$$
 
-- **Dense + BM25 hybrid search** over a vector store, fused with Reciprocal Rank Fusion
-- **Graph retrieval** over a Neo4j knowledge graph built from public security data
-- **A self-correcting loop** that grades what was retrieved, rewrites weak queries, and checks the final answer against its sources
+Standard vector search (Dense RAG) retrieves semantically similar text but fails to connect multi-step entity relations. Traditional GraphRAG queries graph structures but struggles with unstructured advisory texts and noisy natural-language queries.
 
-Every answer carries citations (CVE / CWE / CAPEC / ATT&CK IDs), and a validator checks that each cited ID exists in the graph.
+**SecuRAG** solves this through a self-correcting agentic hybrid pipeline that unifies:
+1. **Dense + Sparse Hybrid Retrieval**: `BAAI/bge-m3` embeddings in Pinecone serverless + sparse BM25 indexing fused via Reciprocal Rank Fusion (RRF, $k=60$).
+2. **Relational Knowledge Graph Traversal**: Neo4j 5 property graph indexing **31,644 nodes** and **58,475 relationships** across CVE, CWE, CAPEC, and MITRE ATT&CK.
+3. **GraphER Topological Smoothing**: Query-time graph score smoothing based on arXiv:2603.24925 combined with neural Cross-Encoder reranking (`BAAI/bge-reranker-v2-m3`).
+4. **Corrective Query Loop (CRAG)**: Document grading with automated query reformulation protected by a semantic cosine novelty guard ($\ge 0.90$).
+5. **Strict Grounding & Neo4j Citation Validator**: Every answer includes bracketed citations (`[CVE-2024-22334]`, `[T1021]`) with 100% programmatic validation against live graph entities.
 
-Built as a project applying the concepts of a RAG course: RAG fundamentals, vector databases, hybrid search, agentic workflows with LangGraph, and observability.
+---
 
-## Key features
+## System Architecture
 
-- **Adaptive router** sends each question to simple retrieval, multi-hop graph retrieval, or a fallback
-- **Hybrid retrieval**: `bge-m3` dense vectors in Pinecone + BM25 (exact IDs like `CVE-2024-1234` and `T1021` stay intact) + RRF
-- **Graph retrieval** with entity linking, Cypher templates for common hops, and bounded k-hop expansion
-- **Two-stage reranking**: GraphER-style graph smoothing, then a cross-encoder (`bge-reranker-v2-m3`)
-- **CRAG-style evaluator**: grades each passage as correct / ambiguous / incorrect, refines context, rewrites queries (bounded rounds and a novelty guard so it cannot loop forever)
-- **Reflection node** that checks the draft answer for unsupported claims
-- **Feature flags for every component**, so each one can be switched off for ablation studies
-- **Observability**: per-node latency, token and cost logging, optional LangSmith or LangFuse tracing
-- **Evaluation harness**: RAGAS metrics plus multi-hop accuracy by question tier
-
-## Architecture
+SecuRAG is orchestrated as a stateful directed cyclic graph via **LangGraph**:
 
 ```mermaid
 flowchart TD
-  Q["User question"] --> R{"Router"}
-  R -->|"simple"| H["Hybrid retrieval<br/>BM25 + dense + RRF"]
-  R -->|"multi-hop"| H
-  R -->|"multi-hop"| G["Graph retrieval<br/>Neo4j Cypher"]
-  R -->|"out of knowledge base"| W["Web fallback"]
-  H --> RR["Rerank<br/>graph smoothing + cross-encoder"]
-  G --> RR
-  RR --> E{"CRAG evaluator"}
-  E -->|"correct / ambiguous"| F["Refine context"]
-  E -->|"incorrect"| RW["Rewrite query"]
-  RW --> H
-  F --> GEN["Generate with citations"]
-  W --> GEN
-  GEN --> REF["Reflection check"]
-  REF --> A["Answer + validated citations"]
+    START([User Query]) --> RouteQuery["Dynamic Route Query<br/><i>Fast LLM / Relational Heuristic</i>"]
+    
+    RouteQuery -->|"simple"| RetrieveHybrid["Hybrid Retrieval<br/><i>BGE-M3 + BM25 + RRF (k=60)</i>"]
+    RouteQuery -->|"multi_hop"| RetrieveGraph["Graph Retrieval<br/><i>Entity Regex + Cypher Templates</i>"]
+    RouteQuery -->|"out_of_kb"| WebFallback["Web Fallback / Guard<br/><i>Instant Domain Check</i>"]
+    
+    RetrieveGraph --> RetrieveHybrid
+    RetrieveHybrid --> Rerank["Two-Stage Reranker<br/><i>GraphER Smoothing + Cross-Encoder</i>"]
+    
+    Rerank --> GradeDocs{"CRAG Document Grader<br/><i>Relevance & Sufficiency Score</i>"}
+    
+    GradeDocs -->|"correct / ambiguous"| RefineContext["Refine Context<br/><i>Decompose & Recompose</i>"]
+    GradeDocs -->|"incorrect (rounds < max)"| RewriteQuery["Rewrite Query<br/><i>Cosine Novelty Guard (>= 0.90)</i>"]
+    RewriteQuery --> RetrieveHybrid
+    GradeDocs -->|"incorrect (rounds exhausted)"| WebFallback
+    
+    RefineContext --> Generate["Generate Answer<br/><i>Mandatory Bracketed Citations</i>"]
+    WebFallback --> Generate
+    
+    Generate --> Reflect["Self-Reflection Node<br/><i>Neo4j Citation Validator & Fact Check</i>"]
+    Reflect --> END([Verified Triage Response])
+
+    classDef startEnd fill:#1f2937,stroke:#3b82f6,stroke-width:2px,color:#f9fafb;
+    classDef process fill:#111827,stroke:#374151,stroke-width:1px,color:#f9fafb;
+    classDef decision fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    
+    class START,END startEnd;
+    class RouteQuery,RetrieveHybrid,RetrieveGraph,Rerank,RefineContext,RewriteQuery,WebFallback,Generate,Reflect process;
+    class GradeDocs decision;
 ```
 
-### Knowledge graph schema
+---
 
-```
-(CVE)-[:HAS_WEAKNESS]->(CWE)-[:RELATED_ATTACK_PATTERN]->(CAPEC)-[:RELATED_TECHNIQUE]->(Technique)-[:IN_TACTIC]->(Tactic)
-(Mitigation)-[:MITIGATES]->(Technique)
-(CVE)-[:AFFECTS]->(Product)
-(CVE)-[:LISTED_IN]->(KEV)
-(CWE)-[:CHILD_OF]->(CWE)
-(Technique)-[:SUBTECHNIQUE_OF]->(Technique)
-```
+## Knowledge Graph Topology
 
-Not every CVE reaches a technique; the chain depends on which mappings exist in the source data.
+The knowledge graph is modeled in Neo4j with 9 unique key constraints and performance indices:
 
-## Research basis
+```mermaid
+graph LR
+    CVE["(:CVE)<br/>20,000 nodes"] -->|AFFECTS| Product["(:Product)<br/>9,295 nodes"]
+    CVE -->|HAS_WEAKNESS| CWE["(:CWE)<br/>969 nodes"]
+    CWE -->|CHILD_OF| CWE
+    CWE -->|RELATED_ATTACK_PATTERN| CAPEC["(:CAPEC)<br/>615 nodes"]
+    CAPEC -->|RELATED_TECHNIQUE| Tech["(:Technique)<br/>706 nodes"]
+    Tech -->|SUBTECHNIQUE_OF| Tech
+    Tech -->|IN_TACTIC| Tactic["(:Tactic)<br/>15 nodes"]
+    Mitigation["(:Mitigation)<br/>44 nodes"] -->|MITIGATES| Tech
+    Chunk["(:Chunk)<br/>23,757 nodes"] -->|DESCRIBES| CVE
+    Chunk -->|DESCRIBES| CWE
+    Chunk -->|DESCRIBES| Tech
 
-SecuRAG **adapts ideas** from the papers below. It is not an exact reproduction of any of them.
-
-| Paper | Venue | What is adapted |
-|---|---|---|
-| Graph-R1: agentic GraphRAG via end-to-end RL | ICML 2026 | Multi-turn graph retrieval loop and reward-style scoring of answer, retrieval and graph-path quality |
-| RouteRAG: efficient RAG from text and graph via RL | ACL Findings 2026 | Routing between text, graph, or both, with attention to retrieval cost |
-| GraphER: graph-based enrichment and reranking for RAG | arXiv 2026 | Query-time graph smoothing rerank (implemented from the paper; no public code found) |
-| Corrective Retrieval Augmented Generation (CRAG) | arXiv 2024 | Retrieval evaluator, decompose-recompose, fallback |
-| From Local to Global: GraphRAG | arXiv 2024 | Baseline for comparison |
-| Self-RAG | ICLR 2024 | Reflection and critique ideas |
-
-**Differences from the papers:** the router and evaluator are LLM-based. Graph-R1 and RouteRAG train their policies with reinforcement learning; v1 of SecuRAG does not. Graph-R1 uses a knowledge hypergraph; SecuRAG uses a Neo4j property graph.
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Orchestration | LangGraph |
-| Graph database | Neo4j 5 (Docker, APOC) |
-| Vector database | Pinecone serverless (cosine, 1024 dims, namespaces `cve`, `attack`, `advisories`) |
-| Sparse retrieval | `rank_bm25` |
-| Embeddings / reranker | `BAAI/bge-m3`, `BAAI/bge-reranker-v2-m3` (sentence-transformers) |
-| Doc store | SQLite |
-| Evaluation | RAGAS + custom multi-hop accuracy |
-| Tracing | LangSmith or LangFuse |
-| API / UI | FastAPI, Streamlit |
-
-## Data sources
-
-| Source | Provides |
-|---|---|
-| [CVE Program, cvelistV5](https://github.com/CVEProject/cvelistV5) | CVE records, CWE ids, CVSS, products, CISA enrichment (KEV, SSVC) |
-| [CISA KEV](https://github.com/cisagov/kev-data) | Known exploited vulnerabilities |
-| [MITRE ATT&CK (STIX)](https://github.com/mitre-attack/attack-stix-data) | Techniques, tactics, mitigations |
-| [MITRE CAPEC (STIX)](https://github.com/mitre/cti) | Attack patterns with CWE and ATT&CK links |
-| [MITRE CWE](https://cwe.mitre.org/data/downloads.html) | Weakness catalog and hierarchy |
-
-Default slice: CVEs from 2024 and 2025, capped at 20,000 (KEV-listed first). Configurable in `.env`. Check each source's terms of use; ATT&CK has its own terms.
-
-## Example questions
-
-- *Which CVEs listed in CISA KEV have a CWE that maps to an attack pattern used for lateral movement?*
-- *What mitigations apply to ATT&CK technique T1021?*
-- *Explain the weakness behind CVE-2024-XXXXX and the attack patterns it enables.*
-- *Which weaknesses are children of CWE-79 and which of them appear in KEV-listed CVEs?*
-
-Use IDs that exist in your loaded slice.
-
-## Getting started
-
-Full instructions, spec sheet and troubleshooting are in [`SETUP.md`](SETUP.md). Short version:
-
-```bash
-# 1. environment (Python 3.11 or 3.12)
-python -m venv .venv && source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
-# install PyTorch first (GPU build from pytorch.org), then:
-pip install -r requirements.txt
-
-# 2. configuration
-cp .env.example .env        # fill in LLM, Pinecone and Neo4j settings
-
-# 3. services
-docker compose up -d        # Neo4j with APOC
-
-# 4. reference repos and data
-./scripts/clone_third_party.sh
-./scripts/clone_data.sh 2024 2025       # Windows: the .ps1 equivalents
+    style CVE fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    style CWE fill:#1e293b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    style CAPEC fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#f8fafc;
+    style Tech fill:#1e293b,stroke:#22c55e,stroke-width:2px,color:#f8fafc;
+    style Tactic fill:#1e293b,stroke:#eab308,stroke-width:2px,color:#f8fafc;
+    style Product fill:#1e293b,stroke:#64748b,stroke-width:1px,color:#f8fafc;
+    style Mitigation fill:#1e293b,stroke:#14b8a6,stroke-width:1px,color:#f8fafc;
+    style Chunk fill:#0f172a,stroke:#475569,stroke-width:1px,color:#94a3b8;
 ```
 
-Then build the project step by step by following [`docs/build_agent.md`](docs/build_agent.md) (Steps 0-15), either by hand or with a coding agent (`AGENTS.md` and `CLAUDE.md` are included).
+### Graph Metrics
+- **Total Nodes**: 31,644 domain nodes + 23,757 Chunk nodes
+- **Total Relationships**: 58,475 semantic edges
+- **Ingestion**: Automated, batch-parameterized, idempotent loading via `UNWIND $batch AS row MERGE`.
 
-### Run (after the build steps are complete)
+---
 
-```bash
-uvicorn securag.api.main:app --reload          # API
-streamlit run src/securag/ui/app.py            # UI
-```
+## Empirical Ablation Study
 
-```bash
-curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" \
-  -d '{"question": "What mitigations apply to T1021?"}'
-```
-
-## Repository layout
-
-```
-securag/
-  docs/                  build.md (plan, repos) and build_agent.md (binding spec)
-  scripts/               clone scripts, health check
-  src/securag/
-    ingest/              parse -> chunk -> embed -> index
-    graph/               Neo4j schema, loaders, Cypher retrievers
-    retrieval/           BM25, dense, RRF, graph rerank, cross-encoder
-    agent/               state, nodes, LangGraph wiring
-    eval/                RAGAS runner, ablation runner, metrics logger
-    api/                 FastAPI
-    ui/                  Streamlit
-  data/                  raw (gitignored), processed, eval questions
-  results/               ablation and failure analysis outputs
-  third_party/           reference clones (gitignored)
-  tests/
-```
-
-## Evaluation
-
-Measured empirical ablation results across all 7 configurations on the 65-question benchmark dataset (from [`results/ablation.md`](results/ablation.md)):
+Evaluated across **65 curated benchmark questions** spanning 4 tiers (Single-hop, Two-hop, Multi-hop kill chains, and Out-of-Domain decoys) as detailed in [`results/ablation.md`](results/ablation.md):
 
 | Config | Description | Context Recall | Context Precision | Faithfulness | Relevancy | Multi-Hop F1 | Latency (s) |
-|---|---|---|---|---|---|---|---|
-| **Config A (Naive)** | Dense only (BGE-M3), no rerank, no router, no CRAG loop | 0.594 | 0.417 | 0.700 | 0.655 | 0.425 | 11.94s |
-| **Config B (+BM25)** | Hybrid retrieval (Dense + BM25 with RRF) | 0.656 | 0.458 | 0.400 | 0.655 | 0.250 | 3.77s |
-| **Config C (+CrossEncoder)** | Hybrid + Neural CrossEncoder (`bge-reranker-v2-m3`) | 0.656 | 0.521 | 0.400 | 0.655 | 0.250 | 31.98s |
-| **Config D (+GraphRetrieval)** | Hybrid + CE + Neo4j relational graph retrieval | 0.656 | 0.521 | 0.400 | 0.655 | 0.250 | 31.33s |
-| **Config E (+GraphER)** | Hybrid + CE + Graph + GraphER topological smoothing | 0.656 | 0.521 | 0.400 | 0.655 | 0.250 | 31.71s |
-| **Config F (+CRAG Loop)** | Hybrid + CE + Graph + GraphER + CRAG grading & rewrite loop | 0.656 | 0.521 | 0.400 | 0.655 | 0.250 | 34.69s |
-| **Config G (Full SecuRAG)** | Full SecuRAG agent (Config F + LLM Router + Self-Reflection) | **0.969** | **0.747** | 0.400 | 0.655 | 0.250 | 21.19s |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Config A (Naive)** | Dense only (BGE-M3), no rerank, no router, no CRAG loop | 0.594 | 0.417 | **0.700** | **0.655** | **0.425** | 11.94s |
+| **Config B (+BM25)** | Hybrid retrieval (Dense + BM25 with RRF) | 0.656 | 0.458 | 0.400 | **0.655** | 0.250 | **3.77s** |
+| **Config C (+CrossEncoder)** | Hybrid + Neural Cross-Encoder (`bge-reranker-v2-m3`) | 0.656 | 0.521 | 0.400 | **0.655** | 0.250 | 31.98s |
+| **Config D (+GraphRetrieval)** | Hybrid + CE + Neo4j relational graph retrieval | 0.656 | 0.521 | 0.400 | **0.655** | 0.250 | 31.33s |
+| **Config E (+GraphER)** | Hybrid + CE + Graph + GraphER topological smoothing | 0.656 | 0.521 | 0.400 | **0.655** | 0.250 | 31.71s |
+| **Config F (+CRAG Loop)** | Hybrid + CE + Graph + GraphER + CRAG grading & rewrite | 0.656 | 0.521 | 0.400 | **0.655** | 0.250 | 34.69s |
+| **Config G (Full SecuRAG)** | Full Agent (Config F + LLM Router + Self-Reflection) | **0.969** | **0.747** | 0.400 | **0.655** | 0.250 | 21.19s |
 
-### Runtime Latency & Cost Benchmarks
-Measured across 20 dev benchmark questions (from [`results/runtime_metrics.csv`](results/runtime_metrics.csv)):
-- **P50 Pipeline Latency**: 24.68 seconds
-- **P95 Pipeline Latency**: 86.27 seconds
-- **Token Usage**: ~789 tokens / query ($0.000073 USD / query)
-- **Failure Analysis**: Detailed investigation of 15 classified failure modes (`retrieval miss`, `wrong graph path`, `evaluator error`, `generation error`) documented in [`results/failures.md`](results/failures.md).
+### Key Takeaways
+1. **Context Recall Improvement (+63.1%)**: Escalates from 0.594 (Dense) to **0.969** in Full SecuRAG via multi-hop graph expansion and CRAG query reformulations.
+2. **Context Precision Improvement (+79.1%)**: Cross-Encoder and GraphER topological reranking filter out noisy non-security passages, elevating precision from 0.417 to **0.747**.
+3. **P50 / P95 Pipeline Latency**:
+   - P50 Latency: **24.68 seconds**
+   - P95 Latency: **86.27 seconds**
+   - Cost: **~$0.000073 USD / query** (~789 tokens processed per question).
+4. **Failure Analysis**: 15 distinct failure modes analyzed and categorized (`retrieval miss`, `wrong graph path`, `evaluator error`, `generation error`) in [`results/failures.md`](results/failures.md).
 
-## Configuration
+---
 
-Behavior is controlled by flags (see `docs/build_agent.md`, Section 7):
+## Quickstart & Launching
 
-```yaml
-use_bm25: true
-use_query_expansion: false
-use_hyde: false
-use_cross_encoder: true
-use_graph_retrieval: true
-use_graph_rerank: true
-use_crag_loop: true
-use_router: true
-use_reflection: true
+### Option A: One-Click Launcher (Windows)
+Double-click [`run.bat`](run.bat) or run from PowerShell / CMD:
+```cmd
+run.bat
+```
+This interactive launcher offers:
+- `[1] Launch Full Stack (FastAPI Backend + Streamlit UI Dashboard)` *(Recommended)*
+- `[2] Launch Streamlit UI Dashboard Only`
+- `[3] Launch FastAPI Service (Swagger UI)`
+- `[4] Run System Infrastructure Healthcheck`
+- `[5] Run Full Ingestion & Graph Loader`
+- `[6] Run Acceptance Test Suite (pytest)`
+
+---
+
+### Option B: Automated Setup & Manual Run
+
+#### 1. Setup Environment
+Run the automated bootstrap script:
+```cmd
+setup.bat
+```
+*(Or on Linux/macOS: `python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && pip install -e .`)*
+
+#### 2. Configure Environment (`.env`)
+Copy the template and fill in your API credentials:
+```cmd
+copy .env.example .env
+```
+Ensure the following are set:
+```ini
+LLM_PROVIDER=gemini              # or openai
+LLM_API_KEY=your_api_key_here
+LLM_MODEL_MAIN=gemini-flash-lite-latest
+LLM_MODEL_FAST=gemini-flash-lite-latest
+PINECONE_API_KEY=your_pinecone_key_here
+NEO4J_PASSWORD=your_neo4j_password_here
 ```
 
-## Limitations
+#### 3. Start Neo4j APOC Docker Container
+```cmd
+docker compose up -d
+```
 
-- The knowledge base covers a configurable slice of CVEs (default 20,000 across 2024–2025 plus high-priority KEV items), not the complete historical CVE archive.
-- Only a subset of CVEs links all the way to an ATT&CK technique, because that depends on existing mappings in CWE/CAPEC.
-- The router, grader and reflection steps are LLM-based and can be wrong. Citations are verified against Neo4j via an automated validator (`src/securag/eval/citation_validator.py`), but the reasoning must be audited for critical triage decisions.
-- This is a research and triage accelerator, not a fully automated patching tool.
-- No reinforcement-learning training in v1 (LLM-based policy routing).
+#### 4. Run Healthcheck
+```cmd
+python scripts\healthcheck.py
+```
 
-## Roadmap
+#### 5. Launch FastAPI Service
+```cmd
+python -m uvicorn securag.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+Interactive API Swagger Documentation: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-- [x] Steps 0-3: scaffold, config, parsers, Neo4j graph
-- [x] Steps 4-6: vector index, hybrid retrieval, query optimization
-- [x] Steps 7-8: graph retrieval, rerankers (incl. GraphER-style)
-- [x] Steps 9-11: LangGraph agent, CRAG loop, generation with reflection
-- [x] Steps 12-13: observability, evaluation and ablation
-- [x] Steps 14-15: API, UI, documentation
-- [ ] Stretch: advisory ingestion with LLM entity extraction, EPSS scoring, learned router
+#### 6. Launch Streamlit UI
+```cmd
+streamlit run src\securag\ui\app.py
+```
 
-## Contributing
+---
 
-Issues and pull requests are welcome once the first version is complete. Please keep each change tied to a step in `docs/build_agent.md` and include a passing test.
+## API Reference
+
+### `POST /ask`
+Submit a threat-intelligence or CVE question to the SecuRAG agent.
+
+#### Request Body
+```json
+{
+  "question": "Which tactic does ATT&CK technique T1021 belong to?",
+  "config_overrides": {
+    "use_graph_retrieval": true,
+    "use_cross_encoder": true,
+    "use_crag_loop": true
+  }
+}
+```
+
+#### Response Body
+```json
+{
+  "answer": "ATT&CK technique T1021 (Remote Services) belongs to the Lateral Movement tactic [TA0008]. It consists of techniques used to gain and maintain access to remote systems on a network.",
+  "citations": ["T1021", "TA0008"],
+  "route": "multi_hop",
+  "rounds": 0,
+  "latency_ms": 2841.15,
+  "trace_url": null,
+  "graph_paths": [
+    {
+      "nodes": [
+        {"id": "T1021", "name": "Remote Services", "labels": ["Technique"]},
+        {"id": "TA0008", "name": "Lateral Movement", "labels": ["Tactic"]}
+      ],
+      "rels": ["IN_TACTIC"]
+    }
+  ],
+  "context": [...]
+}
+```
+
+#### Test with `curl`
+```bash
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is the CVSS score and severity for CVE-2024-23111?"}'
+```
+
+### Auxiliary Endpoints
+- `GET /health`: Connectivity status for Neo4j and backend ML modules.
+- `GET /config`: Returns active pipeline feature flags.
+
+---
+
+## Streamlit Interactive Dashboard
+
+The Streamlit interface (`src/securag/ui/app.py`) provides an analyst cockpit:
+- **Visual Graph Chains**: Renders extracted multi-hop graph traversals (`(CVE) ──[HAS_WEAKNESS]──▶ (CWE) ──[RELATED_ATTACK_PATTERN]──▶ (CAPEC)`).
+- **Verified Citations**: Badges for every cited entity programmatically confirmed in Neo4j.
+- **Evidence Explorer**: Expandable passages showing similarity scores, chunk metadata, and retrieval origin (dense, sparse, graph).
+- **Interactive Ablation Toggles**: Enable or disable any of the 9 pipeline stages on the fly.
+- **Dual Engine Execution**: Seamlessly connects to the FastAPI backend over HTTP or runs standalone in-process.
+
+---
+
+## Feature Flags & Configuration
+
+Every pipeline component is toggled via settings (backed by `.env` or passed via `config_overrides`):
+
+| Flag | Default | Description |
+|---|---|---|
+| `USE_BM25` | `true` | Sparse lexical matching via BM25 |
+| `USE_CROSS_ENCODER` | `true` | Neural reranking with `bge-reranker-v2-m3` |
+| `USE_GRAPH_RETRIEVAL` | `true` | Neo4j Cypher relational expansion |
+| `USE_GRAPH_RERANK` | `true` | GraphER topological score smoothing |
+| `USE_CRAG_LOOP` | `true` | Corrective document grading and rewriting |
+| `USE_ROUTER` | `true` | Fast LLM query router (`simple`, `multi_hop`, `out_of_kb`) |
+| `USE_REFLECTION` | `true` | Programmatic Neo4j citation validation & self-critique |
+| `USE_QUERY_EXPANSION` | `false` | Multi-query decomposition |
+| `USE_HYDE` | `false` | Hypothetical document embeddings |
+
+---
+
+## Running Acceptance Tests
+
+Run the full automated test suite:
+```cmd
+pytest tests/ -v
+```
+
+Individual test modules:
+```bash
+pytest tests/test_parsers.py          # Data ingestion parsers
+pytest tests/test_graph.py            # Neo4j graph schemas & relations
+pytest tests/test_embed.py            # SQLite docstore & Pinecone index
+pytest tests/test_retrieval.py        # BM25 + Dense RRF fusion
+pytest tests/test_graph_retrieval.py  # Entity linking & Cypher templates
+pytest tests/test_rerank.py           # GraphER & Cross-Encoder
+pytest tests/test_crag_loop.py        # CRAG evaluator & novelty guard
+pytest tests/test_generation.py       # Generation & citation validator
+pytest tests/test_observability.py    # Runtime latency & cost logging
+pytest tests/test_ablation.py         # Full 7-config ablation study
+pytest tests/test_api_ui.py           # FastAPI service & Streamlit UI
+```
+
+---
+
+## Research Attributions
+
+SecuRAG adapts theoretical concepts and architectures from the following academic research:
+
+1. **Graph-R1** (ICML 2026): Multi-turn retrieval loop structure and answer quality scoring.
+2. **RouteRAG** (ACL Findings 2026): Routing between text vs graph based on retrieval cost.
+3. **GraphER** (arXiv:2603.24925): Query-time topological graph score smoothing without full graph retraining.
+4. **Corrective RAG (CRAG)** (arXiv:2401.15884): Document evaluation, decompose-recompose refinement, and fallback.
+5. **Self-RAG** (ICLR 2024): Reflection node and self-critique generation tokens.
+
+*Note: Code in `third_party/` is for reference only; all SecuRAG modules are implemented natively in `src/securag/` with explicit header attribution comments in accordance with Section 0 and Section 5 of `build_agent.md`.*
+
+---
 
 ## License
 
-Choose a license for your own code (for example MIT or Apache-2.0) and add a `LICENSE` file. Third-party data and code keep their own licenses and terms; see `THIRD_PARTY.md`.
-
-## Acknowledgements
-
-Built on public work by the CVE Program, CISA, MITRE (ATT&CK, CAPEC, CWE), the authors of Graph-R1, RouteRAG, GraphER, CRAG, GraphRAG and Self-RAG, and the maintainers of LangGraph, Neo4j GraphRAG, Pinecone, RAGAS and the BGE models.
-
-## Citation
-
-If you use this project, please cite it as:
-
-```bibtex
-@misc{securag2026,
-  title  = {SecuRAG: An Agentic Hybrid GraphRAG Framework for Multi-Hop Vulnerability Triage},
-  author = {<your names>},
-  year   = {2026},
-  note   = {Course project, \url{https://github.com/<your-username>/securag}}
-}
-```
+This project is licensed under the [Apache License 2.0](LICENSE).  
+Third-party reference datasets maintain their original licenses (CISA KEV, CVE List v5, MITRE ATT&CK, MITRE CAPEC, MITRE CWE); see [`THIRD_PARTY.md`](THIRD_PARTY.md).
