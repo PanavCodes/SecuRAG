@@ -166,6 +166,30 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - Cross-encoder scores relevant Log4j passage (0.0840) vs irrelevant cookie recipe (0.0000).
   - Acceptance run: `pytest tests/test_rerank.py` **3 passed in 27.67s**.
 
+### Step 9: Agent State and Nodes
+- **Agent State Schema** (`src/securag/agent/state.py`):
+  - TypedDict schema per Section 6 (`question`, `route`, `sub_questions`, `queries_tried`, `rewrite_round`, `candidates`, `graph_paths`, `graded`, `verdict`, `context`, `answer`, `citations`, `reflection`, `config`, `metrics`).
+- **LangGraph Nodes** (`src/securag/agent/nodes.py`):
+  - `route_query`: Fast LLM router (`gemini-flash-lite-latest`) categorizing queries into `simple`, `multi_hop`, or `out_of_kb`.
+  - `retrieve_hybrid`: Invokes hybrid sparse-dense retriever with active flags.
+  - `retrieve_graph`: Invokes Neo4j multi-hop path traversals and k-hop neighborhood expansion.
+  - `rerank`: Applies GraphER topological smoothing followed by CrossEncoder neural rerank.
+  - `grade_documents`: Evaluates candidate score distributions to assign `correct`, `ambiguous`, or `incorrect` verdicts.
+  - `refine_context`: Selects top candidates and formats verified knowledge graph paths into context.
+  - `rewrite_query`: Reformulates query and applies novelty cosine guard ($\ge 0.90$) to prevent redundant loops.
+  - `web_fallback`: Returns standard out-of-KB fallback response.
+  - `generate`: Synthesizes final answer with bracketed citations.
+  - `reflect`: Evaluates faithfulness and unsupported claim verification.
+- **StateGraph Assembly** (`src/securag/agent/graph.py`):
+  - Built with LangGraph `StateGraph`, conditional routing edges (`route_decision`, `grade_decision`), and memory checkpointer (`MemorySaver`).
+- **Acceptance Verification** (`tests/test_agent_routes.py`):
+  - Single-fact question routes `simple`.
+  - Relational question routes `multi_hop`.
+  - Out-of-domain question routes `out_of_kb` and completes end-to-end with fallback response.
+  - Unanswerable request terminates strictly within `max_rewrite_rounds` (2 rounds executed).
+  - Acceptance run: `pytest tests/test_agent_routes.py` **5 passed in 84.73s**.
+
+
 
 
 
