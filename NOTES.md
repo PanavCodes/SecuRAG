@@ -57,3 +57,25 @@ Running log. The agent updates this every step: assumptions, deviations from doc
   - `ATT&CK records: 765` (contains Technique `T1021`)
   - `CVE records   : 20000` (all 20,000 have valid `id` and non-empty `description`)
   - `pytest tests/test_parsers.py`: **1 passed in 0.41s**.
+
+### Step 3: Build Neo4j Graph
+- **Schema & Constraints** (`src/securag/graph/schema.py`):
+  - Created 9 unique key constraints: `cve_id`, `cwe_id`, `capec_id`, `tech_id`, `tactic_id`, `mit_id`, `product_key`, `advisory_id`, `chunk_id`.
+  - Created 2 performance lookup indexes: `cve_published` on `(:CVE(published))` and `cve_kev` on `(:CVE(in_kev))`.
+- **Batch Idempotent Ingestion** (`src/securag/graph/load.py`):
+  - Optimized `src/securag/clients.py` with lazy ML model imports, reducing module import time from 32.1s to 1.55s.
+  - Ingestion order:
+    1. ATT&CK nodes (`:Tactic`, `:Technique`, `:Mitigation`) and relationships (`[:IN_TACTIC]`, `[:SUBTECHNIQUE_OF]`, `[:MITIGATES]`).
+    2. CWE nodes (`:CWE`) and hierarchy (`[:CHILD_OF]`).
+    3. CAPEC nodes (`:CAPEC`) and technique links (`[:RELATED_TECHNIQUE]`).
+    4. Bidirectional CWE-CAPEC link integration (`[:RELATED_ATTACK_PATTERN]`).
+    5. Product nodes (`:Product`) and CVE nodes (`:CVE`).
+    6. CVE relationships (`[:HAS_WEAKNESS]` to CWE, `[:AFFECTS]` to Product).
+  - All loading parameterized via `UNWIND $batch AS row` with `MERGE` on unique keys.
+- **Graph Topology Counts**:
+  - Nodes: `CVE` (20,000), `Product` (9,295), `CWE` (969), `Technique` (706), `CAPEC` (615), `Mitigation` (44), `Tactic` (15). Total nodes: **31,644**.
+  - Relationships: `AFFECTS` (32,161), `HAS_WEAKNESS` (20,849), `MITIGATES` (1,477), `RELATED_ATTACK_PATTERN` (1,212), `CHILD_OF` (1,160), `IN_TACTIC` (881), `SUBTECHNIQUE_OF` (479), `RELATED_TECHNIQUE` (256). Total relationships: **58,475**.
+- **Acceptance Verification** (`tests/test_graph.py`):
+  - Idempotency test: Ingestion re-executed; node counts verified completely unchanged on second run.
+  - Multi-hop traversal test: Verified Cypher query `(c:CVE)-[:HAS_WEAKNESS]->(w:CWE)-[:RELATED_ATTACK_PATTERN]->(p:CAPEC)-[:RELATED_TECHNIQUE]->(t:Technique)-[:IN_TACTIC]->(ta:Tactic)` returns multiple real chains (e.g. `CVE-2024-22334 -> CWE-732 -> CAPEC-1 -> T1574.010 -> Stealth`).
+  - Acceptance run: `pytest tests/test_graph.py` **3 passed in 6.46s**.

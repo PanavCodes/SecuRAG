@@ -1,15 +1,16 @@
 """Client factories and connection management for Neo4j, Pinecone, Embeddings, Reranker, and LLMs."""
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import logging
 from neo4j import GraphDatabase, Driver
-from pinecone import Pinecone, ServerlessSpec
-from sentence_transformers import SentenceTransformer, CrossEncoder
-from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 
 from securag.config import get_settings
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer, CrossEncoder
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from pinecone import Pinecone
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,10 @@ def close_neo4j_driver() -> None:
         _neo4j_driver = None
 
 
-def get_pinecone_client() -> Pinecone:
+def get_pinecone_client() -> Any:
     """Return a Pinecone client instance using configured API key."""
+    from pinecone import Pinecone
+
     settings = get_settings()
     if not settings.pinecone_api_key:
         raise ValueError("PINECONE_API_KEY is not configured in .env")
@@ -50,6 +53,8 @@ def get_pinecone_index() -> Any:
 
     Ensures the index exists with 1024 dimensions and cosine metric as per spec.
     """
+    from pinecone import ServerlessSpec
+
     settings = get_settings()
     pc = get_pinecone_client()
     index_name = settings.pinecone_index
@@ -72,23 +77,29 @@ def get_pinecone_index() -> Any:
 
 
 @lru_cache(maxsize=1)
-def get_embedder() -> SentenceTransformer:
+def get_embedder() -> Any:
     """Return cached SentenceTransformer embedding model (BAAI/bge-m3)."""
+    from sentence_transformers import SentenceTransformer
+
     settings = get_settings()
     logger.info("Loading embedder model '%s' on device '%s'...", settings.embed_model, settings.device)
     return SentenceTransformer(settings.embed_model, device=settings.device)
 
 
 @lru_cache(maxsize=1)
-def get_reranker() -> CrossEncoder:
+def get_reranker() -> Any:
     """Return cached CrossEncoder reranking model (BAAI/bge-reranker-v2-m3)."""
+    from sentence_transformers import CrossEncoder
+
     settings = get_settings()
     logger.info("Loading reranker model '%s' on device '%s'...", settings.rerank_model, settings.device)
     return CrossEncoder(settings.rerank_model, device=settings.device)
 
 
-def get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
+def get_llm(model_name: str, temperature: float = 0.0) -> Any:
     """Return a configured LangChain ChatModel instance."""
+    from langchain_openai import ChatOpenAI
+
     settings = get_settings()
     provider = settings.llm_provider.lower().strip()
 
@@ -98,7 +109,6 @@ def get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
             "Please provide a valid API key in .env"
         )
 
-    # Default to OpenAI compatible format
     kwargs: dict[str, Any] = {
         "model": model_name,
         "temperature": temperature,
@@ -110,13 +120,13 @@ def get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
     return ChatOpenAI(**kwargs)
 
 
-def get_main_llm() -> BaseChatModel:
+def get_main_llm() -> Any:
     """Return main LLM model used for synthesis, answer generation, and reflection."""
     settings = get_settings()
     return get_llm(model_name=settings.llm_model_main, temperature=0.0)
 
 
-def get_fast_llm() -> BaseChatModel:
+def get_fast_llm() -> Any:
     """Return fast LLM model used for routing and CRAG document grading."""
     settings = get_settings()
     return get_llm(model_name=settings.llm_model_fast, temperature=0.0)
