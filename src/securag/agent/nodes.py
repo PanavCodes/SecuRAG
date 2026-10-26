@@ -7,7 +7,7 @@ import time
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from securag.clients import get_fast_llm, get_main_llm, get_embedder
+from securag.clients import get_fast_llm, get_main_llm, get_embedder, get_neo4j_driver
 from securag.config import get_settings
 from securag.retrieval.hybrid import HybridRetriever
 from securag.graph.retrieve import GraphRetriever, link_entities
@@ -165,17 +165,58 @@ def retrieve_hybrid_node(state: AgentState) -> dict[str, Any]:
     docstore = Docstore()
     for ent in linked:
         entity_chunks = docstore.get_chunks_by_source_id(ent["id"])
+        
+        # Query Neo4j for verified entity properties if available
+        graph_text = None
+        try:
+            driver = get_neo4j_driver()
+            with driver.session() as s:
+                if ent["type"] == "cve":
+                    rec = s.run("""
+                        MATCH (c:CVE {id: $id})
+                        OPTIONAL MATCH (c)-[:HAS_WEAKNESS]->(w:CWE)
+                        OPTIONAL MATCH (c)-[:AFFECTS]->(p:Product)
+                        RETURN c.id AS id, c.cvss_score AS cvss_score, c.cvss_severity AS cvss_severity,
+                               c.published AS published, c.in_kev AS in_kev,
+                               collect(DISTINCT w.id) AS cwes,
+                               collect(DISTINCT p.key) AS products
+                        LIMIT 1
+                    """, id=ent["id"]).single()
+                    if rec:
+                        cwes_str = ", ".join(rec["cwes"]) if rec["cwes"] else "None"
+                        prods_str = ", ".join(rec["products"][:5]) if rec["products"] else "None"
+                        graph_text = (
+                            f"Verified Database Record for [{rec['id']}]: "
+                            f"CVSS Score: {rec['cvss_score']}, "
+                            f"Severity: {rec['cvss_severity']}, "
+                            f"Published Date: {rec['published']}, "
+                            f"In CISA KEV: {rec['in_kev']}, "
+                            f"Weaknesses: {cwes_str}, "
+                            f"Affected Products: {prods_str}."
+                        )
+                elif ent["type"] == "cwe":
+                    rec = s.run("MATCH (w:CWE {id: $id}) RETURN w.id AS id, w.name AS name, w.description AS desc LIMIT 1", id=ent["id"]).single()
+                    if rec:
+                        graph_text = f"Verified Database Record for [{rec['id']}]: Name: {rec['name']}, Description: {rec['desc']}."
+                elif ent["type"] in ["technique", "tech"]:
+                    rec = s.run("MATCH (t:Technique {id: $id}) RETURN t.id AS id, t.name AS name, t.description AS desc LIMIT 1", id=ent["id"]).single()
+                    if rec:
+                        graph_text = f"Verified Database Record for [{rec['id']}]: Name: {rec['name']}, Description: {rec['desc']}."
+        except Exception as exc:
+            logger.debug("Could not fetch graph record for %s: %s", ent["id"], exc)
+
         for ec in entity_chunks:
-            if ec["chunk_id"] not in {c["chunk_id"] for c in candidates}:
-                candidates.append({
-                    "chunk_id": ec["chunk_id"],
-                    "source_id": ec["source_id"],
-                    "source_type": ec["source_type"],
-                    "text": ec["text"],
-                    "score": 0.5,
-                    "via": "exact_entity_match",
-                    "metadata": ec.get("metadata", {}),
-                })
+            full_text = f"{graph_text} {ec['text']}" if graph_text else ec["text"]
+            candidates.append({
+                "chunk_id": ec["chunk_id"],
+                "source_id": ec["source_id"],
+                "source_type": ec["source_type"],
+                "text": full_text,
+                "score": 1.0,
+                "via": "exact_entity_match",
+                "metadata": ec.get("metadata", {}),
+                "is_exact_match": True,
+            })
 
     # Merge with existing candidates if any
     existing = state.get("candidates", [])
@@ -236,6 +277,13 @@ def rerank_node(state: AgentState) -> dict[str, Any]:
         use_cross_encoder=cfg.get("use_cross_encoder", True),
         top_n=cfg.get("rerank_top_n", 6),
     )
+
+    # Ensure any exact entity matches for entities queried are preserved in top candidates
+    target_ids = {e["id"] for e in link_entities(query)}
+    exact_candidates = [c for c in candidates if c.get("source_id") in target_ids or c.get("is_exact_match")]
+    for ec in reversed(exact_candidates):
+        if ec["chunk_id"] not in {r["chunk_id"] for r in reranked}:
+            reranked.insert(0, ec)
 
     return {
         "candidates": reranked,
