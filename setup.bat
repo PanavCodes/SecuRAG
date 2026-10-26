@@ -14,7 +14,7 @@ echo ======================================================================
 echo.
 
 :: 1. Detect Python
-echo [1/8] Checking Python installation...
+echo [1/9] Checking Python installation...
 set "PYTHON_CMD="
 
 :: Try py -3.12, py -3.11, python
@@ -47,7 +47,7 @@ for /f "tokens=*" %%i in ('%PYTHON_CMD% --version') do echo   %%i
 echo.
 
 :: 2. Setup Virtual Environment
-echo [2/8] Setting up virtual environment in .venv...
+echo [2/9] Setting up virtual environment in .venv...
 if not exist ".venv" (
     echo Creating .venv directory...
     %PYTHON_CMD% -m venv .venv
@@ -63,7 +63,7 @@ if not exist ".venv" (
 echo.
 
 :: 3. Activate venv
-echo [3/8] Activating virtual environment...
+echo [3/9] Activating virtual environment...
 if not exist ".venv\Scripts\activate.bat" (
     echo [ERROR] .venv\Scripts\activate.bat missing!
     pause
@@ -74,18 +74,18 @@ echo [OK] Activated .venv
 echo.
 
 :: 4. Upgrade pip
-echo [4/8] Upgrading pip...
+echo [4/9] Upgrading pip...
 python -m pip install --upgrade pip --quiet
 echo [OK] Pip upgraded.
 echo.
 
 :: 5. Install Dependencies
-echo [5/8] Installing PyTorch and project dependencies...
+echo [5/9] Installing PyTorch and project dependencies...
 
 :: Check for NVIDIA GPU
 nvidia-smi >nul 2>&1
 if %ERRORLEVEL% equ 0 (
-    echo NVIDIA GPU detected. Installing PyTorch with CUDA 12.4 support...
+    echo NVIDIA GPU detected. Installing PyTorch with CUDA support...
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 ) else (
     echo No NVIDIA GPU detected. Installing CPU PyTorch...
@@ -107,7 +107,7 @@ echo [OK] Dependencies installed successfully.
 echo.
 
 :: 6. Pre-download and Warm ML Models
-echo [6/8] Pre-downloading Hugging Face ML models...
+echo [6/9] Pre-downloading Hugging Face ML models...
 echo   1. Dense Embedder: BAAI/bge-m3 (1024-dim)
 echo   2. Cross-Encoder:  BAAI/bge-reranker-v2-m3
 python scripts\download_models.py
@@ -117,7 +117,7 @@ if %ERRORLEVEL% neq 0 (
 echo.
 
 :: 7. Raw Security Datasets Check
-echo [7/8] Checking security datasets (data\raw)...
+echo [7/9] Checking security datasets (data\raw)...
 if not exist "data\raw\cvelistV5" (
     echo [!] Raw datasets not detected in data\raw.
     echo Downloading public vulnerability datasets (CISA KEV, CVEs 2024-2025, CWE, CAPEC, ATT&CK)...
@@ -128,7 +128,7 @@ if not exist "data\raw\cvelistV5" (
 echo.
 
 :: 8. Environment Configuration (.env)
-echo [8/8] Checking configuration (.env)...
+echo [8/9] Checking configuration (.env)...
 if not exist ".env" (
     if exist ".env.example" (
         echo Creating .env from .env.example...
@@ -140,12 +140,22 @@ if not exist ".env" (
 )
 echo.
 
+:: 9. Generate Technical Documentation PDF
+echo [9/9] Generating Technical Documentation PDF...
+python scripts\generate_pdf_docs.py
+if %ERRORLEVEL% equ 0 (
+    echo [OK] Documentation generated: docs\SecuRAG_Documentation.pdf
+) else (
+    echo [NOTE] Documentation HTML available in docs\SecuRAG_Documentation.html
+)
+echo.
+
 echo ======================================================================
 echo   SecuRAG Setup Complete!
 echo ======================================================================
 echo.
 echo Next steps:
-echo   1. Start Neo4j APOC:
+echo   1. Ensure Docker Desktop is running and start Neo4j APOC:
 echo      docker compose up -d
 echo.
 echo   2. Launch the interactive menu:
