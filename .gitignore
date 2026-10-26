@@ -1,12 +1,20 @@
 # Environment & Secrets (NEVER COMMIT SECRETS)
 .env
 .env.*
+*.env
+*.env.local
+*.env.production
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
 *credentials*
 *secret*
 service_account*.json
+api_key*
+apikey*
+*.token
 
 # Virtual Environments
 .venv/
@@ -49,8 +57,12 @@ data/neo4j/
 data/processed/*.jsonl
 data/processed/*.pkl
 data/processed/*.sqlite
+data/processed/*.sqlite3
 data/processed/*.db
 data/eval/*.tmp
+*.sqlite
+*.sqlite3
+*.db
 
 # Reference Repos & Logs
 third_party/
